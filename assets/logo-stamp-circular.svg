@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none" stroke="#3E3F3F" aria-label="Spacio AM circular stamp">
+  <defs>
+    <path id="circle-top" d="M 100,100 m -78,0 a 78,78 0 1,1 156,0" fill="none"></path>
+    <path id="circle-bottom" d="M 100,100 m -78,0 a 78,78 0 1,0 156,0" fill="none"></path>
+  </defs>
+  
+  <text font-family="&#39;Valky&#39;, &#39;Cormorant Garamond&#39;, Georgia, serif" font-size="14" letter-spacing="6" fill="#3E3F3F" stroke="none">
+    <textPath href="#circle-top" startOffset="50%" text-anchor="middle">/  S P A C I O ⋆ A M  /</textPath>
+  </text>
+  
+  <text font-family="&#39;Valky&#39;, &#39;Cormorant Garamond&#39;, Georgia, serif" font-size="14" letter-spacing="6" fill="#3E3F3F" stroke="none">
+    <textPath href="#circle-bottom" startOffset="50%" text-anchor="middle">/  S P A C I O ⋆ A M  /</textPath>
+  </text>
+</svg>
