@@ -1,0 +1,1069 @@
+/* ============================================================
+   SPACIO AM — Generador de Contratos
+   Styled per the official Spacio AM design system.
+   ============================================================ */
+
+@import url("spacio-tokens.css");
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--alabaster);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: var(--lh-body);
+  letter-spacing: var(--tr-wide);
+  -webkit-font-smoothing: antialiased;
+}
+
+button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+input, textarea, select { font-family: inherit; font-size: inherit; color: inherit; }
+
+/* ============================================================
+   App shell
+   ============================================================ */
+.app {
+  display: grid;
+  grid-template-columns: 400px 1fr;
+  min-height: 100vh;
+}
+
+.panel {
+  background: var(--alabaster);
+  border-right: var(--border);
+  padding: 48px 36px;
+  overflow-y: auto;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.viewer {
+  background: var(--bg-alt);
+  padding: 48px 32px 120px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 32px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* ============================================================
+   Panel — brand mark + form
+   ============================================================ */
+.brand {
+  margin-bottom: 8px;
+}
+.brand img {
+  width: 110px;
+  display: block;
+}
+.brand-eyebrow {
+  margin-top: 22px;
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 10px;
+  letter-spacing: var(--tr-eyebrow);
+  text-transform: uppercase;
+  color: var(--earth);
+}
+.brand-line {
+  margin: 16px 0 4px;
+  border: 0;
+  border-top: 1px solid var(--warm-grey);
+}
+
+.section {
+  margin-top: 36px;
+}
+.section-label {
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 10px;
+  letter-spacing: var(--tr-eyebrow);
+  text-transform: uppercase;
+  color: var(--earth);
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.section-label .num {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 14px;
+  letter-spacing: 0;
+  color: var(--ink);
+  font-feature-settings: "lnum" 1;
+}
+.section-label .num::after {
+  content: " —";
+  color: var(--warm-grey);
+  margin-left: 2px;
+}
+
+/* ── Tabs ───────────────────────────────────────────────── */
+.tab-sublabel {
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 8.5px;
+  letter-spacing: var(--tr-eyebrow);
+  text-transform: uppercase;
+  color: var(--warm-grey);
+  margin-bottom: 8px;
+}
+.tabgroup {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--warm-grey);
+}
+.tabgroup button {
+  flex: 1;
+  padding: 14px 8px;
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 10px;
+  letter-spacing: var(--tr-eyebrow);
+  text-transform: uppercase;
+  color: var(--earth);
+  position: relative;
+  transition: color var(--d-fast) var(--ease);
+}
+.tabgroup button:hover { color: var(--ink); }
+.tabgroup button.active { color: var(--ink); }
+.tabgroup button.active::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: 0; right: 0;
+  height: 1px;
+  background: var(--ink);
+}
+
+/* ── Drop zone ──────────────────────────────────────────── */
+.drop {
+  border: 1px dashed var(--warm-grey);
+  padding: 32px 16px;
+  text-align: center;
+  cursor: pointer;
+  transition: background var(--d-fast) var(--ease), border-color var(--d-fast) var(--ease);
+  background: var(--bg-alt);
+}
+.drop:hover, .drop.dragging {
+  border-color: var(--ink);
+  background: var(--alabaster);
+}
+.drop-icon {
+  font-family: var(--serif);
+  font-size: 32px;
+  line-height: 1;
+  font-weight: 300;
+  color: var(--ink);
+  margin-bottom: 12px;
+}
+.drop-title {
+  font-family: var(--serif);
+  font-size: 18px;
+  font-weight: 400;
+  margin-bottom: 6px;
+  color: var(--ink);
+}
+.drop-hint {
+  font-family: var(--sans);
+  font-size: 11px;
+  letter-spacing: var(--tr-wide);
+  color: var(--earth);
+  line-height: 1.5;
+}
+
+.preview-id {
+  margin-top: 12px;
+  border: 1px solid var(--warm-grey);
+  overflow: hidden;
+  background: var(--alabaster);
+  position: relative;
+}
+.preview-id img { display: block; width: 100%; }
+.preview-id .remove {
+  position: absolute;
+  top: 10px; right: 10px;
+  width: 28px; height: 28px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--alabaster);
+  font-size: 15px;
+  line-height: 1;
+  transition: opacity var(--d-fast) var(--ease);
+}
+.preview-id .remove:hover { opacity: 0.85; }
+
+.extract-status {
+  margin-top: 12px;
+  font-size: 11px;
+  letter-spacing: var(--tr-wide);
+  color: var(--earth);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.extract-status .spinner {
+  width: 12px; height: 12px;
+  border: 1px solid var(--warm-grey);
+  border-top-color: var(--ink);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Fields ─────────────────────────────────────────────── */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+.field label {
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 9px;
+  letter-spacing: var(--tr-eyebrow);
+  text-transform: uppercase;
+  color: var(--earth);
+}
+.field input, .field textarea, .field select {
+  border: none;
+  border-bottom: 1px solid var(--warm-grey);
+  background: transparent;
+  padding: 6px 0 10px;
+  font-family: var(--sans);
+  font-size: 14px;
+  letter-spacing: var(--tr-wide);
+  outline: none;
+  color: var(--ink);
+  transition: border-color var(--d-fast) var(--ease);
+}
+.field input:focus, .field textarea:focus, .field select:focus {
+  border-bottom-color: var(--ink);
+}
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+/* ── Buttons ────────────────────────────────────────────── */
+.btn-primary {
+  width: 100%;
+  margin-top: 22px;
+  background: var(--ink);
+  color: var(--alabaster);
+  padding: 18px 20px;
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: var(--tr-eyebrow);
+  text-transform: uppercase;
+  transition: opacity var(--d-fast) var(--ease), transform 120ms var(--ease);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.btn-primary:hover { opacity: 0.88; }
+.btn-primary:active { transform: scale(0.98); }
+.btn-primary:disabled { opacity: 0.35; cursor: not-allowed; }
+.btn-primary .star {
+  display: inline-block;
+  width: 12px; height: 12px;
+}
+
+.btn-secondary {
+  width: 100%;
+  margin-top: 10px;
+  background: transparent;
+  color: var(--ink);
+  padding: 14px 20px;
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 10px;
+  letter-spacing: var(--tr-eyebrow);
+  text-transform: uppercase;
+  border: 1px solid var(--ink);
+  transition: opacity var(--d-fast) var(--ease), transform 120ms var(--ease);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.btn-secondary:hover { background: var(--ink); color: var(--alabaster); }
+.btn-secondary:active { transform: scale(0.98); }
+.btn-secondary:disabled { opacity: 0.35; cursor: not-allowed; background: transparent; color: var(--ink); }
+
+.footnote {
+  margin-top: 22px;
+  font-size: 11px;
+  letter-spacing: var(--tr-wide);
+  line-height: 1.7;
+  color: var(--earth);
+  padding-top: 22px;
+  border-top: 1px solid var(--warm-grey);
+}
+
+/* ============================================================
+   DOCUMENT PAGES — Spacio AM letterhead (Letter 8.5×11″)
+   Content flows in a single `.page.grow` container.
+   In the preview, only the FIRST 1056px shows the cover
+   letterhead — page-break markers indicate subsequent pages.
+   The PDF generator stamps the appropriate (cover/cont)
+   letterhead JPG on each output PDF page at full resolution.
+   ============================================================ */
+.page {
+  width: 816px;
+  min-height: 1056px;
+  background-color: #E8E4DC;
+  position: relative;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.page.grow {
+  height: auto;
+  overflow: visible;
+}
+
+/* Letterhead images positioned absolutely as <img> for crisp rendering */
+.page-letterhead {
+  position: absolute;
+  left: 0;
+  width: 816px;
+  height: 1056px;
+  z-index: 0;
+  pointer-events: none;
+  user-select: none;
+  object-fit: cover;
+}
+
+/* Page-break marker between visual pages in preview */
+.page-break {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+.page-break::before {
+  content: "";
+  position: absolute;
+  left: 64px; right: 64px;
+  top: 0;
+  border-top: 1px dashed rgba(62,63,63,0.18);
+}
+.page-break-label {
+  position: absolute;
+  right: 64px;
+  top: -8px;
+  background: var(--alabaster);
+  padding: 2px 10px;
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 9px;
+  letter-spacing: var(--tr-eyebrow);
+  text-transform: uppercase;
+  color: var(--earth);
+  border: 1px solid var(--warm-grey);
+  border-radius: 999px;
+}
+
+/* ── Content area ────────────────────────────────────── */
+.page-body {
+  position: relative;
+  z-index: 1;
+  margin-left: 256px;
+  margin-right: 72px;
+  padding-top: 340px;   /* clears the cover letterhead's logo */
+  padding-bottom: 88px;
+  font-family: var(--sans);
+  font-size: 10.5px;     /* smaller, more text per page */
+  line-height: 1.55;
+  letter-spacing: var(--tr-wide);
+  color: var(--ink);
+  text-wrap: pretty;
+}
+
+/* Document title */
+.doc-title {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 22px;       /* was 28 — smaller, less vertical space */
+  line-height: 1.16;
+  letter-spacing: var(--tr-tight);
+  color: var(--ink);
+  margin: 0 0 14px 0;
+  text-wrap: balance;
+  outline: none;
+}
+.doc-eyebrow {
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 8.5px;
+  letter-spacing: var(--tr-eyebrow);
+  text-transform: uppercase;
+  color: var(--earth);
+  margin-bottom: 10px;
+  outline: none;
+}
+
+/* ── Clauses ─────────────────────────────────────────── */
+.clause { margin-top: 14px; position: relative; }
+.clause:first-of-type { margin-top: 18px; }
+
+.clause-h {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+.clause-h .ord {
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 12.5px;
+  letter-spacing: var(--tr-normal);
+  color: var(--ink);
+  outline: none;
+}
+.clause-h .ord::after { content: "."; }
+.clause-h .label {
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 9px;
+  letter-spacing: var(--tr-eyebrow);
+  text-transform: uppercase;
+  color: var(--earth);
+  outline: none;
+  flex: 1;
+}
+
+/* Clause add/remove buttons (personalizado mode) */
+.clause-actions {
+  position: absolute;
+  top: -2px;
+  right: -36px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity var(--d-fast) var(--ease);
+}
+.clause:hover .clause-actions,
+.clause:focus-within .clause-actions { opacity: 1; }
+.clause-action {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--alabaster);
+  border: 1px solid var(--warm-grey);
+  color: var(--earth);
+  font-size: 13px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all var(--d-fast) var(--ease);
+  padding: 0;
+}
+.clause-action:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+.clause-action.danger:hover {
+  border-color: var(--peach);
+  color: var(--peach);
+}
+.add-clause {
+  margin-top: 24px;
+  padding: 14px 16px;
+  width: 100%;
+  border: 1px dashed var(--warm-grey);
+  background: transparent;
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 10px;
+  letter-spacing: var(--tr-eyebrow);
+  text-transform: uppercase;
+  color: var(--earth);
+  cursor: pointer;
+  transition: all var(--d-fast) var(--ease);
+}
+.add-clause:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
+.clause p { margin: 0 0 6px 0; outline: none; }
+.clause ul, .clause ol {
+  margin: 6px 0 10px 0;
+  padding-left: 0;
+  list-style: none;
+}
+.clause ul li, .clause ol li {
+  position: relative;
+  padding-left: 20px;
+  margin-bottom: 5px;
+}
+.clause ul li::before {
+  content: "—";
+  position: absolute;
+  left: 0;
+  color: var(--earth);
+}
+.clause ol { counter-reset: ord; }
+.clause ol li { counter-increment: ord; }
+.clause ol li::before {
+  content: counter(ord, lower-alpha) ")";
+  position: absolute;
+  left: 0;
+  color: var(--earth);
+}
+.clause strong { font-weight: 600; color: var(--ink); }
+
+/* Inline editable spans (data fields) */
+.editable {
+  background: rgba(233, 130, 106, 0.08);
+  padding: 0 4px;
+  border-radius: 2px;
+  outline: none;
+  transition: background var(--d-fast) var(--ease);
+  border-bottom: 1px dashed rgba(233, 130, 106, 0.35);
+}
+.editable:hover { background: rgba(233, 130, 106, 0.16); }
+.editable:focus { background: rgba(233, 130, 106, 0.22); }
+
+/* Peach placeholders for empty editable fields — same treatment as the
+   ⟦…⟧ blocks: peach while empty, ink once the user types. */
+.custom-edit [contenteditable][data-placeholder]:empty::before {
+  content: attr(data-placeholder);
+  color: var(--peach);
+  opacity: 0.9;
+  pointer-events: none;
+}
+.custom-edit [contenteditable] { color: var(--ink); }
+
+/* In personalizado mode, body paragraphs get a subtle hint when focused */
+.custom-edit [contenteditable="true"]:focus {
+  background: rgba(233, 130, 106, 0.10);
+  border-radius: 2px;
+  box-shadow: 0 0 0 4px rgba(233, 130, 106, 0.10);
+}
+
+/* When generating PDF, hide editable affordance */
+.printing .editable {
+  background: transparent;
+  border-bottom: none;
+}
+.printing .clause-actions,
+.printing .add-clause { display: none !important; }
+
+/* ── Signature block ────────────────────────────────── */
+.sig-block { margin-top: 22px; }
+.sig-date {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 13px;
+  letter-spacing: var(--tr-normal);
+  margin-bottom: 14px;
+  color: var(--ink);
+}
+.sig-row { margin-top: 16px; }
+.sig-line {
+  border-top: 1px solid var(--ink);
+  padding-top: 6px;
+  margin-top: 40px;
+  max-width: 320px;
+}
+.sig-name {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 10px;
+  letter-spacing: var(--tr-wide);
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.sig-role {
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 8.5px;
+  letter-spacing: var(--tr-eyebrow);
+  text-transform: uppercase;
+  color: var(--earth);
+  margin-top: 3px;
+}
+
+/* ── Toast ──────────────────────────────────────────── */
+.toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: var(--ink);
+  color: var(--alabaster);
+  padding: 16px 22px;
+  font-family: var(--sans);
+  font-size: 12px;
+  letter-spacing: var(--tr-wide);
+  z-index: 1000;
+  animation: slideIn var(--d-med) var(--ease);
+  box-shadow: var(--shadow-md);
+  max-width: 320px;
+}
+@keyframes slideIn {
+  from { transform: translateY(20px); opacity: 0; }
+  to   { transform: translateY(0);   opacity: 1; }
+}
+
+/* ── Details (collapsible) ─────────────────────────── */
+details summary {
+  list-style: none;
+  cursor: pointer;
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 10px;
+  letter-spacing: var(--tr-eyebrow);
+  text-transform: uppercase;
+  color: var(--earth);
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  user-select: none;
+}
+details summary::-webkit-details-marker { display: none; }
+details[open] summary { color: var(--ink); }
+
+/* ── Co-hosting cover header ───────────────────────────── */
+.cohost-head {
+  margin: 0 0 22px 0;
+}
+.cohost-title {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 26px;
+  line-height: 1.1;
+  letter-spacing: var(--tr-tight);
+  color: var(--ink);
+  margin: 0;
+  text-align: right;
+}
+
+/* Empty-field placeholder shown inline in the document */
+.field-ph {
+  color: var(--peach);
+  opacity: 0.9;
+}
+.printing .field-ph { color: var(--earth); }
+
+/* ============================================================
+   PAGINATED SHEETS — single membrete background per page
+   ============================================================ */
+.paginated-doc {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* One physical Letter sheet */
+.sheet {
+  position: relative;
+  width: 816px;
+  height: 1056px;
+  background-color: #E8E4DC;
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+/* The membrete: ONE image, fills the whole sheet (= background-size:100% 100%) */
+.sheet-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  z-index: 0;
+  pointer-events: none;
+  user-select: none;
+}
+
+/* Text column, inset left 32% / right 9% / top 9% */
+.sheet-col {
+  position: absolute;
+  left: 261px;          /* 32% of 816 */
+  top: 95px;            /* 9% of 1056 */
+  width: 481px;         /* right edge → 9% inset */
+  z-index: 1;
+  font-family: var(--sans);
+  font-weight: 400;
+  font-size: 15px;
+  line-height: 1.6;
+  letter-spacing: 0.008em;
+  color: var(--ink);
+  text-align: justify;
+  text-justify: inter-word;
+  -webkit-hyphens: none;
+  hyphens: none;
+}
+
+/* Offscreen measurer — same column width & typography */
+.measure-col {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  width: 481px;
+  visibility: hidden;
+  pointer-events: none;
+  font-family: var(--sans);
+  font-weight: 400;
+  font-size: 15px;
+  line-height: 1.6;
+  letter-spacing: 0.008em;
+  text-align: justify;
+}
+
+/* Contract title — serif, right-aligned, first page only */
+.sheet-title {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 25px;
+  line-height: 1.12;
+  letter-spacing: var(--tr-tight);
+  color: var(--ink);
+  text-align: right;
+  padding-bottom: 22px;
+}
+
+/* Blocks (spacing baked as padding so it counts in measured height) */
+/* Force paragraphs to match list-item text EXACTLY (size, line-height,
+   tracking) — the global `p` rule otherwise gives them 0.14em tracking
+   and 1.7 line-height. Only bold differs between the two. */
+.blk-intro, .blk-p {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.6;
+  letter-spacing: 0.008em;
+}
+.blk-intro { padding: 0 0 12px 0; }
+.blk-p { padding: 0 0 8px 0; }
+.sheet-col strong, .measure-col strong { font-weight: 600; color: var(--ink); }
+.blk-ph { color: var(--peach); }
+
+/* Clause heading: ordinal Valky bold italic + label Montserrat bold */
+.blk-head { margin: 0; padding: 13px 0 4px 0; text-align: left; }
+.blk-head .ord {
+  font-family: var(--serif);
+  font-weight: 700;
+  font-style: italic;
+  font-size: 20px;
+  letter-spacing: 0;
+  color: var(--ink);
+}
+.blk-head .lbl {
+  font-family: var(--sans);
+  font-weight: 700;
+  font-size: 16.5px;
+  color: var(--ink);
+}
+
+/* List item: hanging marker */
+.blk-li {
+  display: flex;
+  gap: 8px;
+  padding: 0 0 5px 14px;
+  text-align: left;
+}
+.blk-li .mk { flex: 0 0 auto; color: var(--earth); min-width: 14px; }
+.blk-li .tx { flex: 1 1 auto; text-align: justify; font-size: 15px; }
+
+/* Signature group (kept atomic) */
+.blk-sig { padding: 24px 0 0 0; text-align: left; }
+.blk-sig .s-date {
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 15px;
+  letter-spacing: 0.008em;
+  margin-bottom: 8px;
+}
+.blk-sig .s-rows { display: flex; flex-direction: column; gap: 46px; margin-top: 20px; }
+.blk-sig .s-line {
+  border-top: 1px solid var(--ink);
+  padding-top: 6px;
+  max-width: 300px;
+}
+/* espacio reservado para la firma: siempre presente (mide igual con o sin firma) */
+.blk-sig .s-ink {
+  height: 58px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  padding: 0 8px 3px 4px;
+  overflow: hidden;
+}
+.blk-sig .s-ink img {
+  max-height: 54px;
+  max-width: 260px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  object-position: left bottom;
+  display: block;
+}
+.blk-sig .s-name {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 15px;
+  letter-spacing: var(--tr-wide);
+  text-transform: uppercase;
+}
+.blk-sig .s-role {
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 15px;
+  letter-spacing: var(--tr-eyebrow);
+  text-transform: uppercase;
+  color: var(--earth);
+  margin-top: 3px;
+}
+
+/* ── Per-clause edit affordance (paginated sheets) ──── */
+.blk-edit {
+  position: absolute;
+  left: -52px;
+  margin-top: 1px;
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 8px;
+  letter-spacing: var(--tr-eyebrow);
+  text-transform: uppercase;
+  color: var(--earth);
+  background: var(--alabaster);
+  border: 1px solid var(--warm-grey);
+  border-radius: 999px;
+  padding: 3px 8px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--d-fast) var(--ease), color var(--d-fast) var(--ease), border-color var(--d-fast) var(--ease);
+  z-index: 6;
+}
+.blk-intro, .blk-p, .blk-head, .blk-li { position: relative; }
+.blk-intro:hover .blk-edit,
+.blk-p:hover .blk-edit,
+.blk-head:hover .blk-edit,
+.blk-li:hover .blk-edit,
+.blk-edit:focus { opacity: 1; }
+.blk-edit:hover { color: var(--ink); border-color: var(--ink); }
+.printing .blk-edit { display: none !important; }
+
+/* ── Clause editor modal ─────────────────────────────── */
+.clause-editor-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(62,63,63,0.55);
+  backdrop-filter: blur(4px);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  animation: slideIn var(--d-fast) var(--ease);
+}
+.clause-editor {
+  background: var(--alabaster);
+  width: min(680px, 100%);
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: var(--shadow-lg);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.clause-editor-head {
+  padding: 24px 28px 16px;
+  border-bottom: 1px solid var(--warm-grey);
+}
+.clause-editor-eyebrow {
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 9px;
+  letter-spacing: var(--tr-eyebrow);
+  text-transform: uppercase;
+  color: var(--earth);
+  margin-bottom: 8px;
+}
+.clause-editor-title {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 20px;
+  line-height: 1.15;
+  color: var(--ink);
+}
+.clause-editor-area {
+  flex: 1 1 auto;
+  min-height: 260px;
+  margin: 20px 28px 0;
+  padding: 16px;
+  border: 1px solid var(--warm-grey);
+  border-radius: 10px;
+  background: var(--surface, #fff);
+  font-family: var(--sans);
+  font-size: 13.5px;
+  line-height: 1.65;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+  outline: none;
+  resize: vertical;
+}
+.clause-editor-area:focus { border-color: var(--ink); }
+.clause-editor-hint {
+  margin: 12px 28px 0;
+  font-family: var(--sans);
+  font-size: 10.5px;
+  line-height: 1.6;
+  letter-spacing: var(--tr-wide);
+  color: var(--earth);
+}
+.clause-editor-hint b { color: var(--ink); font-weight: 600; }
+.clause-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 20px 28px 24px;
+}
+.clause-editor-actions .ce-spacer { flex: 1 1 auto; }
+.ce-btn {
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 10px;
+  letter-spacing: var(--tr-eyebrow);
+  text-transform: uppercase;
+  padding: 12px 18px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all var(--d-fast) var(--ease);
+}
+.ce-save { background: var(--ink); color: var(--alabaster); }
+.ce-save:hover { opacity: 0.88; }
+.ce-cancel { background: transparent; color: var(--ink); border: 1px solid var(--warm-grey); }
+.ce-cancel:hover { border-color: var(--ink); }
+.ce-reset { background: transparent; color: var(--earth); border: 1px solid transparent; }
+.ce-reset:hover { color: var(--peach); }
+
+/* ── Print ─────────────────────────────────────────── */
+@media print {
+  .panel { display: none; }
+  .app { grid-template-columns: 1fr; }
+  .viewer { padding: 0; background: var(--bg-alt); }
+  .page {
+    box-shadow: none;
+    page-break-after: always;
+  }
+}
+
+/* ── Pill buttons + secciones editables (panel) ───────── */
+.btn-primary, .btn-secondary { border-radius: 999px !important; }
+.tab-sublabel { color: var(--ink) !important; opacity: 1 !important; font-weight: 600; }
+.sec-list { display: flex; flex-direction: column; gap: 6px; }
+.sec-btn { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; text-align: left;
+  border: 1px solid var(--ink-08); background: var(--alabaster); border-radius: 999px; padding: 10px 16px; cursor: pointer;
+  font-family: var(--sans); font-size: 11.5px; letter-spacing: 0.02em; color: var(--ink); transition: all .16s var(--ease); }
+.sec-btn:hover { border-color: var(--ink); background: var(--beige-soft); }
+.sec-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sec-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--peach); flex-shrink: 0; }
+
+/* ── Lápiz de edición por sección ─────────────────────── */
+.blk-edit { padding: 0 !important; width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center;
+  color: var(--earth); font-size: 0; letter-spacing: 0; }
+.blk-edit svg { display: block; }
+.blk-edit:hover { color: var(--peach); border-color: var(--peach); }
+
+/* ── Panel del generador · estilo Dashboard de Propietarios ── */
+.panel .section-label { color: var(--ink); font-family: var(--sans); font-weight: 600; font-size: 10px;
+  letter-spacing: 0.28em; text-transform: uppercase; display: flex; align-items: center; gap: 9px; margin-bottom: 14px; }
+.panel .section-label .num { color: var(--earth); font-weight: 500; }
+.field > label, .field label { font-family: var(--sans); font-size: 10px; font-weight: 500; letter-spacing: 0.28em;
+  text-transform: uppercase; color: var(--earth); margin-bottom: 9px; display: block; }
+.field input, .field textarea, .field select {
+  width: 100%; box-sizing: border-box; font-family: var(--sans); font-size: 14px; letter-spacing: 0.04em;
+  color: var(--ink); padding: 13px 15px; background: var(--alabaster);
+  border: 1px solid var(--warm-grey); border-radius: 14px; outline: none;
+  transition: border-color .18s var(--ease), box-shadow .18s var(--ease); }
+.field input:focus, .field textarea:focus, .field select:focus {
+  border-color: var(--peach); box-shadow: 0 0 0 3px rgba(233,130,106,.35); }
+.field input::placeholder { color: var(--warm-grey); }
+.field { margin-bottom: 14px; }
+.field-row { display: flex; gap: 10px; }
+.field-row .field { flex: 1; min-width: 0; }
+.plazo-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; }
+.plazo-lbl { font-family: var(--sans); font-size: 9.5px; font-weight: 600; letter-spacing: 0.2em;
+  text-transform: uppercase; color: var(--earth); }
+/* bloque colapsable de Spacio AM → tarjeta cálida como en el dashboard */
+.panel details.section { background: var(--beige-soft); border: 1px solid var(--ink-08); border-radius: 18px; padding: 18px 18px 6px; }
+.panel details.section > summary { list-style: none; cursor: pointer; font-family: var(--sans); font-size: 10px;
+  font-weight: 600; letter-spacing: 0.28em; text-transform: uppercase; color: var(--ink);
+  display: flex; align-items: center; gap: 9px; margin-bottom: 14px; }
+.panel details.section > summary::-webkit-details-marker { display: none; }
+.panel details.section > summary::after { content: "+"; margin-left: auto; color: var(--earth); font-size: 14px; letter-spacing: 0; }
+.panel details.section[open] > summary::after { content: "–"; }
+.panel details.section .field input { background: var(--alabaster); }
+/* drop de DPI → mismo lenguaje del dashboard */
+.drop { border: 1.5px dashed var(--warm-grey); border-radius: 18px; background: var(--beige-soft); }
+.drop:hover, .drop.dragging { border-color: var(--ink); }
+.sec-btn { box-shadow: var(--shadow-xs); }
+
+/* contador de secciones editadas en el resumen colapsable */
+.panel details.section > summary .sum-count { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px;
+  background: var(--peach); color: #fff; font-size: 9.5px; font-weight: 700; letter-spacing: 0;
+  display: inline-flex; align-items: center; justify-content: center; }
+.panel details.section .sec-list { margin-bottom: 4px; }
+
+/* la firma va ARRIBA de la línea; el nombre inmediatamente abajo */
+.blk-sig .s-line { border-top: none !important; padding-top: 0 !important; }
+.blk-sig .s-ink { border: none !important; align-items: flex-end !important; }
+.blk-sig .s-rule { border-top: 1px solid var(--ink); margin-bottom: 6px; }
+
+/* columnas del panel: los labels de distinto largo ya no desalinean los campos */
+.field-row { align-items: stretch; }
+.field-row .field { display: flex; flex-direction: column; justify-content: flex-end; }
+.field-row .field > label { min-height: 0; }
+.field-row .field input, .field-row .field select { margin-top: auto; }
+
+/* etiquetas de una sola línea dentro de una fila de dos/tres campos */
+.field-row .field > label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: .16em; font-size: 9px; }
+
+/* input[type=date] mide distinto en iOS: misma caja que los demás */
+.field input[type="date"] { height: 46px; line-height: 20px; -webkit-appearance: none; appearance: none; }
+
+/* ══ Responsive: teléfono y tablet ═══════════════════════ */
+@media (max-width: 1024px) {
+  .app { grid-template-columns: 340px 1fr; }
+  .panel { padding: 32px 24px; }
+}
+@media (max-width: 860px) {
+  .app { grid-template-columns: 1fr; min-height: 0; }
+  .panel { position: static; height: auto; border-right: none; border-bottom: var(--border);
+    padding: 26px 18px 32px; }
+  .viewer { padding: 26px 12px 96px; gap: 22px; }
+  .field-row { flex-wrap: wrap; }
+  .field-row .field { flex: 1 1 100%; }
+  .plazo-row { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .clause-editor { width: calc(100vw - 24px) !important; max-width: none !important; border-radius: 20px; }
+  .clause-editor-area { min-height: 42vh; }
+}
+@media (max-width: 520px) {
+  .panel { padding: 22px 14px 28px; }
+  .btn-primary, .btn-secondary { width: 100%; }
+}
