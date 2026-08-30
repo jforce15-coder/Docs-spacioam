@@ -55,7 +55,9 @@
   --bg:           var(--alabaster);
   --bg-alt:       var(--beige-soft);
   --fg:           var(--ink);
-  --fg-muted:     var(--earth);
+  --graphite:     #6F6867;  /* AA-safe secondary text (5.2:1) */
+  --fg-muted:     var(--graphite);
+  --fg-subtle:    var(--earth);
   --divider:      var(--warm-grey);
   --accent:       var(--peach);
 

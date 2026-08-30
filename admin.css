@@ -1,3 +1,5 @@
+/* graphite AA (5.2:1) para todo el texto secundario — earth queda como --fg-subtle */
+:root{--graphite:#6F6867;--fg-muted:#6F6867;--fg-subtle:#938B8A}
 /* ============================================================
    SPACIO AM — Panel de administración (shell, login, documentos,
    correo y firma). Mismo lenguaje visual que mi.spacioam.com.
@@ -294,3 +296,26 @@ html,body{overflow-x:hidden;max-width:100%}
   .sa-kpi{padding:14px 15px}
   .sa-wrap{padding:18px 12px 90px}
 }
+
+/* ── Login: logos, toggle de idioma, olvidaste tu contraseña ── */
+.sa-login-stamp{height:64px;width:auto;display:block}
+.sa-login-mark{display:flex;justify-content:flex-start}
+.sa-login-mark img{height:72px;width:auto;display:block}
+.sa-login-lang{position:absolute;top:20px;right:20px;z-index:3}
+.sa-login-forgot{font-family:var(--sans);font-size:11.5px;letter-spacing:.04em;line-height:1.6;color:var(--fg-muted);margin-top:-4px}
+.sa-login-note{font-family:var(--sans);font-size:12.5px;letter-spacing:.03em;line-height:1.6;color:var(--fg-muted);background:var(--beige-soft);border-radius:12px;padding:12px 14px}
+.sa-login-err{display:flex;align-items:center;gap:8px}
+.sa-login-cta{display:flex;align-items:center;justify-content:center;gap:10px}
+
+/* logos y tamaños de texto idénticos a mi-spacioam/login.jsx */
+.sa-login-stamp{height:64px;width:auto;display:block}
+.sa-login-mark{display:flex;justify-content:flex-start;margin-bottom:30px}
+.sa-login-mark img{height:72px;width:auto;display:block}
+.sa-login-form{max-width:380px;width:100%}
+.sa-login-main .sa-eyebrow{font-size:11px;letter-spacing:.32em;margin-bottom:14px}
+.sa-login-sub{font-size:13.5px;letter-spacing:.04em;line-height:1.7;margin:12px 0 30px}
+.sa-login-form .sa-field input{font-size:15px;padding:15px 16px}
+.sa-login-forgot{font-size:11.5px;letter-spacing:.04em}
+.sa-login-cta{font-size:11.5px;font-weight:500;letter-spacing:.24em;padding:16px;border-radius:14px}
+.sa-login-aside .sa-eyebrow{font-size:11px;letter-spacing:.32em}
+.sa-login-help{position:relative;z-index:2;font-family:var(--sans);font-size:10.5px;font-weight:400;letter-spacing:.18em;text-transform:uppercase;color:var(--fg-muted)}

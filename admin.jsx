@@ -12,76 +12,134 @@ function Ico({ name, size = 16, stroke = "currentColor" }) {
 }
 
 /* ─── Login ───────────────────────────────────────────────── */
-function AdminLogin({ onLogin }) {
+const LOGIN_T = {
+  es: {
+    eyebrow: "Portal de contratos", welcome: "Bienvenido de vuelta.",
+    sub: "Accede para dar seguimiento a tus documentos.",
+    user: "Correo electrónico", user_ph: "tu@spacioam.com",
+    pass: "Contraseña", pass_ph: "tu contraseña", newpass: "Nueva contraseña",
+    forgot: "¿Olvidaste tu contraseña?",
+    enter: "Entrar", create: "Crear contraseña",
+    err: "Usuario o contraseña incorrectos.",
+    first: "Es tu primer ingreso. Crea una contraseña (mínimo 6 caracteres).",
+    quote: "Hay espacios en donde sueñas con volver a despertar",
+    aside: "Spacio AM · Contratos",
+    help: "Guatemala · ¿Necesitas ayuda? hola@spacioam.com",
+  },
+  en: {
+    eyebrow: "Contracts portal", welcome: "Welcome back.",
+    sub: "Sign in to follow up on your documents.",
+    user: "Email", user_ph: "you@spacioam.com",
+    pass: "Password", pass_ph: "your password", newpass: "New password",
+    forgot: "Forgot your password?",
+    enter: "Sign in", create: "Create password",
+    err: "Incorrect user or password.",
+    first: "This is your first sign-in. Create a password (6 characters minimum).",
+    quote: "There are spaces where you dream of waking up again",
+    aside: "Spacio AM · Contracts",
+    help: "Guatemala · Need help? hola@spacioam.com",
+  },
+};
+
+function AdminLogin({ onLogin, lang, setLang }) {
+  const L = LOGIN_T[lang === "en" ? "en" : "es"];
   const [correo, setCorreo] = useS("");
   const [pass, setPass] = useS("");
   const [show, setShow] = useS(false);
   const [err, setErr] = useS(false);
   const [busy, setBusy] = useS(false);
+  const [needPass, setNeedPass] = useS(null);
 
   const enter = (perfil) => onLogin(perfil);
+  const perfilDe = (p, fallback) => ({
+    name: (p && p.name) || fallback.split("@")[0].replace(/[._]/g, " ").toUpperCase(),
+    email: (p && p.email) || fallback,
+    rol: (window.SAAuth && p && window.SAAuth.roleFor(p, "contratos")) || "Administración",
+    avatar: p && p.photo,
+  });
 
   const submit = (e) => {
     e.preventDefault();
     setErr(false);
-    if (!correo.trim() || pass.length < 4) { setErr(true); return; }
+    const c = correo.trim().toLowerCase();
+    if (!c || pass.length < 4) { setErr(true); return; }
     setBusy(true);
-    const local = () => {
-      setBusy(false);
-      enter({ name: correo.split("@")[0].replace(/[._]/g, " ").toUpperCase(), email: correo.trim().toLowerCase(), rol: "Administración" });
-    };
+    const local = () => { setBusy(false); enter(perfilDe(null, c)); };
     if (!window.SAAuth) { setTimeout(local, 350); return; }
-    window.SAAuth.login(correo.trim().toLowerCase(), pass).then((r) => {
-      if (r && r.ok && r.profile) {
-        setBusy(false);
-        enter({ name: r.profile.name || correo, email: r.profile.email || correo, rol: (window.SAAuth.roleFor(r.profile, "contratos") || "Administración"), avatar: r.profile.photo });
-      } else local();
+    window.SAAuth.login(c, pass).then((r) => {
+      if (r && r.ok && r.profile) { setBusy(false); enter(perfilDe(r.profile, c)); }
+      else if (r && r.error === "needs_password" && r.profile) { setNeedPass(r.profile); setPass(""); setBusy(false); }
+      else local();
     }).catch(local);
+  };
+
+  const createPass = (e) => {
+    e.preventDefault();
+    if (!pass || pass.length < 6) { setErr(true); return; }
+    setBusy(true);
+    window.SAAuth.setInitialPassword(correo.trim().toLowerCase(), pass).then((r) => {
+      if (r && r.ok) enter(perfilDe(r.profile, correo.trim().toLowerCase()));
+      else { setErr(true); setBusy(false); }
+    }).catch(() => { setErr(true); setBusy(false); });
   };
 
   return (
     <div className="sa-login">
       <aside className="sa-login-aside">
         <img className="sa-login-brush" src="assets/brushstroke.svg" alt="" aria-hidden="true" />
-        <div style={{ position: "relative", zIndex: 2 }}><LogoPrimary width={150} /></div>
+        <div style={{ position: "relative", zIndex: 2 }}>
+          <img className="sa-login-stamp" src="assets/brand/logo-stamp.png" alt="Spacio AM" />
+        </div>
         <div style={{ position: "relative", zIndex: 2, maxWidth: 460 }}>
           <Star size={20} color="#E9826A" />
-          <p className="sa-login-quote">“Hay espacios en donde sueñas con volver a despertar”</p>
+          <p className="sa-login-quote">“{L.quote}”</p>
           <div style={{ width: 38, height: 1, background: "var(--ink)", margin: "26px 0 14px" }} />
-          <div className="sa-eyebrow">Spacio AM · Contratos y firma electrónica</div>
+          <div className="sa-eyebrow">{L.aside}</div>
         </div>
-        <div className="sa-eyebrow" style={{ position: "relative", zIndex: 2, letterSpacing: ".18em" }}>Guatemala · Administración</div>
+        <div className="sa-login-help">{L.help}</div>
       </aside>
 
       <main className="sa-login-main">
-        <form className="sa-login-form" onSubmit={submit}>
-          <div><LogoPrimary width={128} /></div>
+        <div className="sa-login-lang">
+          <PanelSeg size="sm" value={lang === "en" ? "en" : "es"} onChange={setLang}
+            options={[{ value: "es", label: "ES" }, { value: "en", label: "EN" }]} />
+        </div>
+
+        <form className="sa-login-form" onSubmit={needPass ? createPass : submit}>
+          <div className="sa-login-mark"><img src="assets/brand/logo-wordmark.png" alt="Spacio AM" /></div>
           <div>
-            <div className="sa-eyebrow">Panel de administración</div>
-            <h1 style={{ fontFamily: "var(--serif)", fontWeight: 400, fontSize: 38, letterSpacing: "-.01em", lineHeight: 1.08, color: "var(--ink)", margin: "14px 0 0" }}>
-              Bienvenido de vuelta
+            <div className="sa-eyebrow">{L.eyebrow}</div>
+            <h1 style={{ fontFamily: "var(--serif)", fontWeight: 400, fontSize: 38, letterSpacing: "-0.01em", lineHeight: 1.08, color: "var(--ink)", margin: "14px 0 0" }}>
+              {L.welcome}
             </h1>
-            <p className="sa-login-sub">Genera, envía y da seguimiento a los documentos de Spacio AM. Entra con tu usuario del control de usuarios unificado.</p>
+            <p className="sa-login-sub">{L.sub}</p>
           </div>
+
+          {needPass && <div className="sa-login-note">{L.first}</div>}
+
           <label className="sa-field">
-            <span>Usuario · correo</span>
+            <span>{L.user}</span>
             <input value={correo} onChange={(e) => { setCorreo(e.target.value); setErr(false); }}
-              placeholder="tu@spacioam.com" autoCapitalize="none" autoCorrect="off" autoFocus />
+              placeholder={L.user_ph} autoCapitalize="none" autoCorrect="off" autoFocus />
           </label>
           <label className="sa-field">
-            <span>Contraseña</span>
+            <span>{needPass ? L.newpass : L.pass}</span>
             <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
-              <input value={pass} type={show ? "text" : "password"} placeholder="••••••••"
+              <input value={pass} type={show ? "text" : "password"} placeholder={L.pass_ph}
                 onChange={(e) => { setPass(e.target.value); setErr(false); }} style={{ paddingRight: 46 }} />
-              <button type="button" onClick={() => setShow((s) => !s)} aria-label="Ver contraseña"
-                style={{ position: "absolute", right: 12, background: "transparent", border: "none", cursor: "pointer", color: "var(--earth)", fontSize: 11, letterSpacing: ".12em" }}>
-                {show ? "OCULTAR" : "VER"}
+              <button type="button" onClick={() => setShow((s) => !s)} aria-label={L.pass}
+                style={{ position: "absolute", right: 12, background: "transparent", border: "none", cursor: "pointer", color: "var(--earth)", display: "flex", padding: 4 }}>
+                <Ico name={show ? "eyeOff" : "eye"} size={18} />
               </button>
             </div>
           </label>
-          {err && <div className="sa-login-err">Datos incorrectos. Revisa e intenta de nuevo.</div>}
+
+          {err && <div className="sa-login-err"><Ico name="info" size={15} /> {L.err}</div>}
+
+          <div className="sa-login-forgot">{L.forgot}</div>
+
           <button className="sa-login-cta" type="submit" disabled={busy}>
-            {busy ? <span className="sa-spin" /> : "Entrar"}
+            {busy ? <span className="sa-spin" /> : <><Ico name="lock" size={15} stroke="var(--alabaster)" />{needPass ? L.create : L.enter}</>}
           </button>
         </form>
       </main>
@@ -628,7 +686,7 @@ function AdminApp() {
     );
   }
 
-  if (!user) return <AdminLogin onLogin={setUser} />;
+  if (!user) return <AdminLogin onLogin={setUser} lang={lang} setLang={setLang} />;
 
   if (signing) {
     return (
