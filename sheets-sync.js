@@ -1,10 +1,16 @@
 /* ══════════════════════════════════════════════════════════════
-   Spacio AM — Base de datos y archivo
-   · Hoja de cálculo: registro legible de CONTRATOS y FIRMAS
-   · Drive: carpeta donde se archiva el PDF firmado + certificado
-   Estructura tomada del esquema de Grow (hojas CONTRATOS/FIRMAS).
-   Si se configura el endpoint de Apps Script, cada cambio se
-   escribe solo; sin endpoint, las filas se exportan a CSV/TSV.
+   Spacio AM — Base de datos y archivo de CONTRATOS (compartido)
+   Este archivo es idéntico en las dos apps (Grow y Docs): ambas
+   escriben en la MISMA hoja y archivan en la MISMA carpeta, así
+   que un contrato no tiene diferencia según dónde se generó.
+
+   · Hoja de cálculo  → registro legible (CONTRATOS · FIRMAS)
+   · Carpeta de Drive → PDF firmado + certificado
+   · Columna Registro → el documento completo en JSON, para que
+                        cualquiera de las dos apps lo reconstruya
+                        tal cual (firmas, historial, ediciones).
+
+   Endpoint: window.SPACIO_DOCS_ENDPOINT, o el guardado en Setup.
    ══════════════════════════════════════════════════════════════ */
 (function () {
   "use strict";
@@ -12,11 +18,23 @@
   var SHEET_ID = "1r__zfIAFLr6mxcuAN6HwQF1OmLTG-lce-jv_naGRDVU";
   var FOLDER_ID = "1GzxF5El3YaT0UVZLMBeRIfwXgzZxyqSa";
   var EP_KEY = "spacio_sync_endpoint_v1";
+  var EP_DEFAULT = "https://script.google.com/macros/s/AKfycbz2_KDtQ5Wm8LRiyEwCXxsHx_DtE4pe2b_aJlLFrN0zu7UvLrnh2PM-6VzbEf00oekW_Q/exec";
+  var TK_KEY = "spacio_sync_token_v1";
+  function token() {
+    var ls = "";
+    try { ls = localStorage.getItem(TK_KEY) || ""; } catch (e) {}
+    return ls || window.SPACIO_DOCS_TOKEN || "Spacio2026!";
+  }
+  function setToken(t) { try { localStorage.setItem(TK_KEY, t || ""); } catch (e) {} }
 
   var MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 
   function F() { return window.Docs; }
-  function endpoint() { try { return localStorage.getItem(EP_KEY) || ""; } catch (e) { return ""; } }
+  function endpoint() {
+    var ls = "";
+    try { ls = localStorage.getItem(EP_KEY) || ""; } catch (e) {}
+    return ls || window.SPACIO_DOCS_ENDPOINT || EP_DEFAULT;
+  }
   function setEndpoint(url) { try { localStorage.setItem(EP_KEY, url || ""); } catch (e) {} }
 
   /* Nombre y ruta del archivo en Drive — legible, ordenable por folio */
@@ -38,22 +56,25 @@
   /* ── Hoja CONTRATOS ─────────────────────────────────────── */
   var CONTRATOS = {
     nombre: "CONTRATOS",
-    nota: "Una fila por documento. Ordenada del más reciente al más antiguo.",
+    nota: "Una fila por documento, sin importar en qué app se generó. Ordenada del más reciente al más antiguo.",
     cols: [
       ["Folio", "SAM-000128", "Identificador legible del documento"],
       ["Fecha de envío", "14 ago 2026, 10:32", "Cuándo se envió a firma"],
-      ["Categoría", "Empleados", "Servicios · Co-hosting · Empleados"],
-      ["Documento", "Contrato laboral", "Tipo de documento generado"],
-      ["Firmantes", "Gabriel Asturias Moreira", "1 o 2 por la otra parte, separados por ·"],
-      ["Correos", "gabriel@ejemplo.com", "Correo de cada firmante"],
+      ["Categoría", "Co-hosting", "Servicios · Co-hosting · Empleados"],
+      ["Documento", "Contrato de co-hosting · individual", "Tipo de documento generado"],
+      ["Firmantes", "Marcel Reiche", "1 o 2 por la otra parte, separados por ·"],
+      ["Correos", "marcel@ejemplo.com", "Correo de cada firmante"],
       ["Por Spacio AM", "Juan Francisco Ovalle Lanuza", "Quien contrafirma"],
       ["Estado", "Firmado", "Enviado · Visto · Firmado por 1 parte · Firmado · Cancelado · Anulado"],
       ["Firmas completas", "2 de 2", "Avance de firmas"],
       ["Fecha de firma", "14 ago 2026, 11:08", "Última firma registrada"],
       ["Certificado", "SAM-FE-000128-A1F4", "Código del certificado de firma"],
-      ["Archivo en Drive", "SAM-000128 — Contrato laboral — Gabriel Asturias.pdf", "PDF firmado + certificado"],
-      ["Carpeta", "Contratos firmados / 2026 / 08 Agosto / Empleados", "Ruta dentro de la carpeta de contratos"],
+      ["Archivo en Drive", "SAM-000128 — Contrato de co-hosting — Marcel Reiche.pdf", "PDF firmado + certificado"],
+      ["Carpeta", "Contratos firmados / 2026 / 08 Agosto / Co-hosting", "Ruta dentro de la carpeta de contratos"],
       ["Notas", "", "Motivo de cancelación o anulación, si aplica"],
+      ["Proyecto", "Brunelo 905", "Proyecto de Grow al que pertenece, si aplica"],
+      ["Propiedad", "Brunelo · Apto. 905, nivel 9", "Propiedad que cubre el contrato"],
+      ["Generado en", "Grow", "App donde se generó: Grow o Docs"],
     ],
     row: function (doc) {
       var fs = doc.firmantes || [];
@@ -75,6 +96,9 @@
         doc.estado === "firmado" ? fileName(doc) : "—",
         path.slice(0, 4).join(" / "),
         doc.motivo || "",
+        doc.proyectoNombre || "—",
+        doc.propiedad || "—",
+        doc.origen === "grow" ? "Grow" : "Docs",
       ];
     },
   };
@@ -86,8 +110,8 @@
     cols: [
       ["Folio", "SAM-000128", "Documento al que pertenece la firma"],
       ["Parte", "Firmante 1", "Firmante 1 · Firmante 2 · Spacio AM"],
-      ["Nombre", "Gabriel Asturias Moreira", "Nombre tal como fue firmado"],
-      ["Correo", "gabriel@ejemplo.com", "Correo del enlace de firma"],
+      ["Nombre", "Marcel Reiche", "Nombre tal como fue firmado"],
+      ["Correo", "marcel@ejemplo.com", "Correo del enlace de firma"],
       ["Estado", "Firmado", "Pendiente · Firmado"],
       ["Fecha y hora", "14 ago 2026, 10:32", "Momento exacto de la firma"],
       ["Método", "Trazada", "Trazada · Imagen · Escrita"],
@@ -149,20 +173,105 @@
     setTimeout(function () { URL.revokeObjectURL(a.href); }, 400);
   }
 
-  /* Escritura automática (requiere el Web App de Apps Script con
-     acceso a la hoja y a la carpeta). Sin endpoint no falla: avisa. */
-  function push(accion, doc) {
+  function post(body) {
     var url = endpoint();
     if (!url) return Promise.resolve({ ok: false, pending: true, reason: "sin_endpoint" });
     return fetch(url, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({
-        action: accion, sheetId: SHEET_ID, folderId: FOLDER_ID,
-        contrato: CONTRATOS.row(doc), firmas: FIRMAS.rows(doc),
-        archivo: fileName(doc), carpeta: drivePath(doc).slice(0, 4),
-      }),
+      body: JSON.stringify(Object.assign({ token: token() }, body)),
     }).then(function (r) { return r.json(); }).catch(function (e) { return { ok: false, error: String(e) }; });
+  }
+
+  /* Escritura: la fila legible de CONTRATOS/FIRMAS y el documento completo
+     en la hoja DOCUMENTOS, que es la que leen las dos apps. */
+  function push(accion, doc) {
+    if (!doc) return Promise.resolve({ ok: false });
+    return Promise.all([
+      post({ action: "upsertContrato", contrato: CONTRATOS.row(doc), firmas: FIRMAS.rows(doc) }),
+      post({ action: "guardarDoc", doc: doc }),
+    ]).then(function (r) { return { ok: !!(r[0] && r[0].ok && r[1] && r[1].ok), contrato: r[0], doc: r[1] }; });
+  }
+
+  /* Lectura: trae TODOS los contratos de la hoja (los de las dos apps)
+     y reconstruye el registro local desde la columna Registro. */
+  function pull() {
+    return post({ action: "listarDocs" }).then(function (r) {
+      if (!r || !r.ok) return { ok: false, docs: [] };
+      var docs = (r.docs || []).map(function (d) {
+        if (typeof d === "string") { try { return JSON.parse(d); } catch (e) { return null; } }
+        return d;
+      }).filter(Boolean);
+      if (F() && F().replaceAll) F().replaceAll(docs);
+      return { ok: true, docs: docs };
+    });
+  }
+
+  /* Archivo: el PDF firmado + certificado va a la carpeta de contratos. */
+  function archivar(doc, base64) {
+    return post({
+      action: "archivarPDF",
+      archivo: fileName(doc), carpeta: drivePath(doc).slice(0, 4),
+      pdfBase64: base64,
+    });
+  }
+
+  /* Borra el documento del registro compartido (no solo del navegador). */
+  function borrar(doc) {
+    return post({ action: "borrarDoc", id: doc && doc.id });
+  }
+
+  /* Correo: sale del mismo remitente y con la misma plantilla en las dos apps.
+     id = solicitudFirma · recordatorio · copiaFirmada · cancelado · solicitudDatos */
+  function correo(id, doc, extra) {
+    if (!window.SpacioEmails) return Promise.resolve({ ok: false, error: "sin_plantillas" });
+    var F = window.Docs;
+    var d = Object.assign({
+      nombre: doc.firmanteNombre, correo: doc.firmanteEmail,
+      documento: doc.tipoLabel, folio: doc.folio,
+      contraparte: doc.contraparteNombre, certificado: doc.certificado || "",
+      fechaFirmante: doc.firmaFirmante ? F.fmtDateTime(doc.firmaFirmante.ts) : "pendiente",
+      fechaSpacio: doc.firmaSpacio ? F.fmtDateTime(doc.firmaSpacio.ts) : "pendiente",
+      enviado: F.relative(doc.enviado), fecha: F.fmtDateTime(doc.enviado),
+      url: (window.SPACIO_FIRMA_BASE || "https://contratos.spacioam.com/index.html") + "?firmar=" + doc.id,
+    }, extra || {});
+    var ASUNTOS = {
+      solicitudFirma: "Tu " + (doc.tipoLabel || "documento").toLowerCase() + " está listo para firmar",
+      recordatorioFirma: "Recordatorio: tu " + (doc.tipoLabel || "documento").toLowerCase() + " sigue pendiente de firma",
+      copiaFirmada: "Tu copia firmada · " + doc.folio,
+      envioCancelado: "Cancelamos el envío de tu " + (doc.tipoLabel || "documento").toLowerCase(),
+      solicitudDatos: "Necesitamos unos datos para tu " + (doc.tipoLabel || "documento").toLowerCase(),
+    };
+    var m = window.SpacioEmails.build(id, d, {});
+    var destinos = (extra && extra.to) ||
+      (doc.firmantes || []).map(function (f) { return f.email; }).join(",");
+    if (!destinos) return Promise.resolve({ ok: false, error: "sin_destino" });
+    return post({
+      action: "enviarCorreo", to: destinos,
+      asunto: (extra && extra.asunto) || ASUNTOS[id] || ("Spacio AM · " + doc.tipoLabel),
+      html: m.html, texto: m.text || "",
+      bcc: (extra && extra.bcc) || doc.contraparteEmail || "",
+      pdfBase64: (extra && extra.pdfBase64) || "", pdfNombre: (extra && extra.pdfNombre) || "",
+    });
+  }
+
+  /* Permisos y firmas guardadas viven también en la hoja, para que valgan
+     en cualquier dispositivo y en las dos apps. */
+  function permisosRemotos() {
+    return post({ action: "permisos", modo: "leer" }).then(function (r) {
+      if (r && r.ok && r.permisos) window.SPACIO_PERMS_REMOTOS = r.permisos;
+      return r;
+    });
+  }
+  function guardarPermiso(correoUsr, perms) {
+    return post({ action: "permisos", modo: "guardar", correo: correoUsr,
+      generar: !!perms.generar, firmar: !!perms.firmar, admin: !!perms.admin });
+  }
+  function firmaRemota(correoUsr) {
+    return post({ action: "firmaGuardada", modo: "leer", correo: correoUsr });
+  }
+  function guardarFirmaRemota(correoUsr, nombre, img) {
+    return post({ action: "firmaGuardada", modo: "guardar", correo: correoUsr, nombre: nombre, img: img });
   }
 
   window.SpacioSync = {
@@ -170,7 +279,11 @@
     SHEET_URL: "https://docs.google.com/spreadsheets/d/" + SHEET_ID + "/edit",
     FOLDER_URL: "https://drive.google.com/drive/folders/" + FOLDER_ID,
     HOJAS: [CONTRATOS, FIRMAS], CONTRATOS: CONTRATOS, FIRMAS: FIRMAS,
-    tabla: tabla, toCSV: toCSV, toTSV: toTSV, download: download, push: push,
+    tabla: tabla, toCSV: toCSV, toTSV: toTSV, download: download,
+    push: push, pull: pull, archivar: archivar, borrar: borrar, correo: correo, post: post,
+    permisosRemotos: permisosRemotos, guardarPermiso: guardarPermiso,
+    firmaRemota: firmaRemota, guardarFirmaRemota: guardarFirmaRemota,
+    token: token, setToken: setToken,
     fileName: fileName, drivePath: drivePath,
     endpoint: endpoint, setEndpoint: setEndpoint,
   };

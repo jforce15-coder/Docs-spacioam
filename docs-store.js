@@ -108,6 +108,10 @@
       firmantes: fs,
       firmanteNombre: fs[0] ? fs[0].nombre : "",
       firmanteEmail: fs[0] ? fs[0].email : "",
+      proyectoId: payload.proyectoId || "",
+      proyectoNombre: payload.proyectoNombre || "",
+      propiedad: payload.propiedad || "",
+      origen: payload.origen || (window.SPACIO_DOCS_ORIGEN || "docs"),
       contraparteNombre: payload.contraparteNombre || "Juan Francisco Ovalle Lanuza",
       contraparteEmail: payload.contraparteEmail || "administracion@spacioam.com",
       mensaje: payload.mensaje || "",
@@ -125,6 +129,7 @@
     log(doc, "Documento generado por Administración");
     log(doc, "Solicitud de firma enviada a " + fs.map(function (f) { return f.email; }).join(" y "));
     write(read().concat([doc]));
+    emit();
     return doc;
   }
 
@@ -137,6 +142,7 @@
       return out;
     });
     write(list);
+    emit();
     return out;
   }
 
@@ -232,6 +238,7 @@
      y la vista previa de firma tengan datos que leer. Si quedó el
      documento de prueba ya firmado, se devuelve a "enviado".      */
   (function seed() {
+    if (window.SPACIO_DOCS_NO_SEED) return;
     var list = read();
     var demo = list.filter(function (d) { return d.demo || d.firmanteEmail === "gabriel@ejemplo.com"; })[0];
     if (demo && list.length === 1 && (!demo.firmantes || !demo.seedV2)) {
@@ -263,7 +270,33 @@
     update(doc.id, function (d) { d.demo = true; d.seedV2 = true; return d; });
   })();
 
+  var subs = [];
+  function emit() { (subs || []).slice().forEach(function (f) { try { f(); } catch (e) {} }); }
+  function onChange(fn) { subs = (subs || []).concat([fn]); return function () { subs = subs.filter(function (f) { return f !== fn; }); }; }
+
+  /* Reemplaza el registro local con lo que trae la hoja compartida.
+     Conserva los locales que la hoja todavía no conoce (folio nuevo). */
+  function replaceAll(remotos) {
+    if (!remotos || !remotos.length) { emit(); return read(); }
+    var byFolio = {};
+    remotos.forEach(function (d) { if (d && d.folio) byFolio[d.folio] = d; });
+    var locales = read().filter(function (d) { return !byFolio[d.folio]; });
+    var out = remotos.concat(locales);
+    write(out); emit();
+    return out;
+  }
+  function upsert(doc) {
+    if (!doc || !doc.folio) return null;
+    var list = read();
+    var i = -1;
+    list.forEach(function (d, j) { if (d.folio === doc.folio) i = j; });
+    if (i < 0) list.push(doc); else list[i] = doc;
+    write(list); emit();
+    return doc;
+  }
+
   window.Docs = {
+    onChange: onChange, emit: emit, replaceAll: replaceAll, upsert: upsert,
     ESTADOS: ESTADOS, TIPO_LABEL: TIPO_LABEL, CATEGORIA: CATEGORIA,
     all: all, get: get, create: create, update: update, remove: remove, resend: resend,
     markVisto: markVisto, signFirmante: signFirmante, signSpacio: signSpacio, faltanFirmas: faltanFirmas,

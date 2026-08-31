@@ -23,8 +23,11 @@
      wordmark, eyebrow, titular serif centrado, banner de imagen,
      párrafos, banda opcional, tabla beige, CTA píldora ink,
      despedida, nota al pie y pie de marca. */
-  var LOGO = "assets/email/logo-wordmark.png";
-  var IMG = "assets/email/";
+  /* Las imágenes se sirven siempre desde la app de contratos, para que
+     el correo salga idéntico se envíe desde Grow o desde Docs. */
+  var HOST = window.SPACIO_MAIL_HOST || "https://contratos.spacioam.com/";
+  var LOGO = HOST + "assets/email/logo-wordmark.png";
+  var IMG = HOST + "assets/email/";
 
   function emailShell(o) {
     o = o || {};
@@ -33,18 +36,18 @@
     var preheader = o.preheader || paras[0] || heading;
     var base = o.base || "";
     var B = [];
-    B.push('<tr><td align="center" style="padding:44px 32px 30px"><img src="' + base + LOGO + '" width="150" alt="Spacio AM" style="display:block;margin:0 auto;border:0;width:150px;height:auto"></td></tr>');
+    B.push('<tr><td align="center" style="padding:44px 32px 30px"><img src="' + LOGO + '" width="150" alt="Spacio AM" style="display:block;margin:0 auto;border:0;width:150px;height:auto"></td></tr>');
     if (eyebrow)
       B.push('<tr><td align="center" style="padding:0 40px 12px"><div style="font-family:' + SANS + ';font-size:10px;font-weight:600;letter-spacing:.32em;text-transform:uppercase;color:' + (o.urgente ? C.peach : C.earth) + '">' + esc(eyebrow) + '</div></td></tr>');
     if (heading)
       B.push('<tr><td align="center" style="padding:0 40px 22px"><h1 style="margin:0;font-family:' + SERIF + ';font-weight:400;font-size:30px;line-height:1.25;color:' + C.ink + ';letter-spacing:-.01em">' + esc(heading) + '</h1></td></tr>');
     if (o.image)
-      B.push('<tr><td style="padding:6px 32px 26px"><img src="' + base + IMG + o.image + '" alt="" style="display:block;width:100%;height:auto;border-radius:18px"></td></tr>');
+      B.push('<tr><td style="padding:6px 32px 26px"><img src="' + IMG + o.image + '" alt="" style="display:block;width:100%;height:auto;border-radius:18px"></td></tr>');
     paras.forEach(function (p) {
       B.push('<tr><td style="padding:0 44px 16px"><p style="margin:0;font-family:' + SANS + ';font-size:14px;line-height:1.85;letter-spacing:.04em;color:' + C.ink + '">' + esc(p) + '</p></td></tr>');
     });
     if (o.band)
-      B.push('<tr><td style="padding:12px 32px 24px"><img src="' + base + IMG + o.band + '" alt="" style="display:block;width:100%;height:auto;border-radius:14px"></td></tr>');
+      B.push('<tr><td style="padding:12px 32px 24px"><img src="' + IMG + o.band + '" alt="" style="display:block;width:100%;height:auto;border-radius:14px"></td></tr>');
     if (rows.length) {
       var tr = rows.map(function (r, i) {
         var l = i === rows.length - 1 ? "none" : "1px solid " + C.divider;
