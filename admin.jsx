@@ -266,7 +266,24 @@ function DocDetail({ doc, onClose, onChange, onSign, onToast, lang, perms, staff
   if (!doc) return null;
   const est = F.ESTADOS[doc.estado] || F.ESTADOS.borrador;
   const cerrado = doc.estado === "cancelado" || doc.estado === "anulado";
-  const act = (fn, msg) => { const d = fn(); onChange(d); if (msg) onToast(msg); };
+  const act = (fn, msg) => { const d = fn(); onChange(d); if (d && window.SpacioSync) window.SpacioSync.push("actualizar", d); if (msg) onToast(msg); };
+  /* Reenviar/Reactivar tiene que volver a mandar el correo de firma, no solo
+     anotarlo en el historial. Mismo enlace, misma plantilla. */
+  const reenviar = () => {
+    const d = F.resend(doc.id);
+    onChange(d);
+    if (!window.SpacioSync) { onToast("Solicitud reenviada."); return; }
+    setBusy("Enviando…");
+    Promise.all([
+      window.SpacioSync.push("reenviar", d),
+      window.SpacioSync.correo("solicitudFirma", d),
+    ]).then(function (r) {
+      setBusy("");
+      const c = r[1];
+      onToast(c && c.ok ? "Correo reenviado a " + ((d.firmantes || []).map(function (f) { return f.email; }).join(", ") || d.firmanteEmail) + "."
+                        : "Se anotó el reenvío, pero el correo no salió: revisa el Web App en Setup.");
+    }).catch(function () { setBusy(""); onToast("Se anotó el reenvío, pero el correo no salió: revisa el Web App en Setup."); });
+  };
 
   return (
     <div className="sa-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
@@ -323,10 +340,10 @@ function DocDetail({ doc, onClose, onChange, onSign, onToast, lang, perms, staff
               </button>
             )}
             {gestion && !cerrado && doc.estado !== "firmado" && (
-              <button className="sa-btn ghost sa-tip" data-tip="Vuelve a enviar el correo con el mismo enlace de firma." onClick={() => act(() => F.resend(doc.id), "Solicitud reenviada.")}>Reenviar</button>
+              <button className="sa-btn ghost sa-tip" data-tip="Vuelve a enviar el correo con el mismo enlace de firma." disabled={!!busy} onClick={reenviar}>{busy || "Reenviar"}</button>
             )}
             {gestion && cerrado && (
-              <button className="sa-btn ghost sa-tip" data-tip="Reabre el envío cancelado y manda de nuevo el correo de firma." onClick={() => act(() => F.resend(doc.id), "Solicitud reenviada.")}>Reactivar</button>
+              <button className="sa-btn ghost sa-tip" data-tip="Reabre el envío cancelado y manda de nuevo el correo de firma." disabled={!!busy} onClick={reenviar}>{busy || "Reactivar"}</button>
             )}
             {gestion && doc.estado !== "firmado" && !cerrado && (
               <button className="sa-btn danger sa-tip" data-tip="Invalida el enlace de firma. El documento queda en el registro y puedes reactivarlo y reenviarlo." onClick={() => {
