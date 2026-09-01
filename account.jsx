@@ -283,7 +283,7 @@ function SetupPanel({ lang, onToast, onGoDB, user }) {
               <img src={firmas[e].img} alt="" style={{ height: 34, maxWidth: 120, objectFit: "contain" }} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 12, letterSpacing: ".03em", color: "var(--ink)", overflow: "hidden", textOverflow: "ellipsis" }}>{e}</div>
-                <div style={{ fontSize: 10.5, color: "var(--earth)" }}>{window.Docs.fmtDate(firmas[e].ts)}</div>
+                <div style={{ fontSize: 10.5, color: "var(--fg-muted)" }}>{window.Docs.fmtDate(firmas[e].ts)}</div>
               </div>
               <button className="sa-btn danger sm" onClick={() => { window.Firmas.remove(e); force((n) => n + 1); onToast && onToast("Firma borrada."); }}>{T("delete")}</button>
             </div>

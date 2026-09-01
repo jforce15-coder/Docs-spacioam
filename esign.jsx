@@ -114,7 +114,7 @@ function SignaturePad({ onChange }) {
 }
 
 /* ─── Lightbox de firma ────────────────────────────────────── */
-function SignLightbox({ doc, firmante, onClose, onFirmar, preview }) {
+function SignLightbox({ doc, firmante, onClose, onFirmar, preview, porSpacio }) {
   const guardada = window.Firmas.get(firmante.email);
   const [modo, setModo] = React.useState(guardada ? "guardada" : "dibujar");
   const [drawn, setDrawn] = React.useState(null);
@@ -156,9 +156,10 @@ function SignLightbox({ doc, firmante, onClose, onFirmar, preview }) {
         <div className="sa-modal-head">
           <div>
             <div className="sa-eyebrow">{doc.folio} · Firma electrónica</div>
-            <h2 className="sa-modal-title">Firma tu documento</h2>
-            <p style={{ margin: "10px 0 0", fontSize: 12.5, letterSpacing: ".03em", color: "var(--earth)" }}>
+            <h2 className="sa-modal-title">{porSpacio ? "Firma por Spacio AM" : "Firma tu documento"}</h2>
+            <p style={{ margin: "10px 0 0", fontSize: 12.5, letterSpacing: ".03em", color: "var(--fg-muted)" }}>
               Firmas como <b style={{ color: "var(--ink)" }}>{firmante.nombre}</b> · {firmante.email}
+              {porSpacio && <><br />En representación de Spacio AM, Sociedad Anónima.</>}
             </p>
           </div>
           <button className="sa-x" onClick={onClose} aria-label="Cerrar">×</button>
@@ -273,7 +274,7 @@ function SendModal({ open, tipo, data, custom, edits, sugerido, onClose, onSent 
           <button className="sa-x" onClick={onClose} aria-label="Cerrar">×</button>
         </div>
         <div className="sa-modal-body">
-          <p style={{ margin: 0, fontSize: 13, lineHeight: 1.7, letterSpacing: ".02em", color: "var(--earth)" }}>
+          <p style={{ margin: 0, fontSize: 13, lineHeight: 1.7, letterSpacing: ".02em", color: "var(--fg-muted)" }}>
             {window.Docs.TIPO_LABEL[tipo] || "Documento"} · cada firmante recibe un enlace personal para revisar y firmar. Spacio AM contrafirma al final.
           </p>
           {campos(f1, setF1, 1)}
@@ -340,7 +341,7 @@ function DataRequestModal({ open, tipo, sugerido, onClose, onSent }) {
           <div>
             <div className="sa-eyebrow">Antes de redactar</div>
             <h2 className="sa-modal-title">Pedir datos al propietario</h2>
-            <p style={{ margin: "10px 0 0", fontSize: 12.5, letterSpacing: ".03em", color: "var(--earth)" }}>
+            <p style={{ margin: "10px 0 0", fontSize: 12.5, letterSpacing: ".03em", color: "var(--fg-muted)" }}>
               Sale de {M.FROM_NAME} &lt;{M.FROM_EMAIL}&gt;
             </p>
           </div>
@@ -371,7 +372,7 @@ function DataRequestModal({ open, tipo, sugerido, onClose, onSent }) {
                   {grupos.map((g, i) => (
                     <label key={g[0]} className="sign-check" style={{ fontSize: 12 }}>
                       <input type="checkbox" checked={sel[i]} onChange={(e) => setSel((s) => s.map((v, j) => j === i ? e.target.checked : v))} />
-                      <span><b>{g[0]}</b><br /><span style={{ color: "var(--earth)" }}>{g[1].join(" · ")}</span></span>
+                      <span><b>{g[0]}</b><br /><span style={{ color: "var(--fg-muted)" }}>{g[1].join(" · ")}</span></span>
                     </label>
                   ))}
                 </div>
@@ -534,6 +535,28 @@ async function downloadSignedPdf(doc, onStatus) {
   }
 }
 
+/* ─── Firma por parte de Spacio AM (desde el panel) ───────── */
+function SpacioSignModal({ doc, onClose, onDone }) {
+  const F = window.Docs;
+  const [busy, setBusy] = React.useState("");
+  const firmante = { id: "spacio", nombre: doc.contraparteNombre, email: doc.contraparteEmail };
+
+  const firmar = async ({ img, metodo }) => {
+    setBusy("Firmando…");
+    const d = F.signSpacio(doc.id, { img, metodo });
+    if (window.SpacioSync) {
+      window.SpacioSync.push("firmar", d);
+      if (d.estado === "firmado") window.SpacioSync.correo("copiaFirmada", d);
+    }
+    setBusy("");
+    onDone(d);
+  };
+
+  return (
+    <SignLightbox doc={doc} firmante={firmante} porSpacio busy={busy} onClose={onClose} onFirmar={firmar} />
+  );
+}
+
 /* ─── Experiencia del firmante ────────────────────────────── */
 function SignExperience({ doc, onUpdate, onExit, stepOverride, onStepChange, preview, readOnly, volverAlPanel }) {
   const F = window.Docs;
@@ -590,12 +613,9 @@ function SignExperience({ doc, onUpdate, onExit, stepOverride, onStepChange, pre
     let d = F.signFirmante(current.id, activo.id, { img, metodo });
     setLive(d); if (onUpdate) onUpdate(d);
     setLightbox(false);
-    if (F.faltanFirmas(d) > 0) { setBusy(""); return; }
-    setBusy("Contrafirmando por Spacio AM…");
-    await new Promise((r) => setTimeout(r, 800));
-    d = F.signSpacio(current.id, { img: typedSignatureImage(d.contraparteNombre), metodo: "typed" });
-    setLive(d); if (onUpdate) onUpdate(d);
     if (window.SpacioSync) window.SpacioSync.push("firmar", d);
+    /* La firma por parte de Spacio AM ya no es automática: la hace una
+       persona desde el panel. Aquí solo se confirma lo firmado. */
     setBusy("");
     setStep(3);
   };
@@ -635,7 +655,7 @@ function SignExperience({ doc, onUpdate, onExit, stepOverride, onStepChange, pre
           <h1 style={{ fontFamily: "var(--serif)", fontWeight: 400, fontSize: "clamp(28px,4vw,42px)", lineHeight: 1.1, margin: 0, color: "var(--ink)" }}>
             {firmadoTodo ? "Listo. Quedó firmado por ambas partes." : "Así se ve la copia firmada."}
           </h1>
-          <p style={{ fontSize: 13.5, lineHeight: 1.7, letterSpacing: ".03em", color: "var(--earth)", margin: 0, textWrap: "pretty" }}>
+          <p style={{ fontSize: 13.5, lineHeight: 1.7, letterSpacing: ".03em", color: "var(--fg-muted)", margin: 0, textWrap: "pretty" }}>
             {firmadoTodo
               ? "Enviamos la copia en PDF con el certificado de firma a " + (current.firmantes || []).map((f) => f.email).join(", ") + " y a " + current.contraparteEmail + ". Queda archivada en el Drive de contratos de Spacio AM."
               : "Cuando todas las partes firmen, la copia en PDF con su certificado llega al correo de cada firmante y queda archivada en el Drive de contratos."}
@@ -673,7 +693,7 @@ function SignExperience({ doc, onUpdate, onExit, stepOverride, onStepChange, pre
           <div>
             <div className="sa-eyebrow">{current.categoria} · {current.folio}</div>
             <h1 style={{ fontFamily: "var(--serif)", fontWeight: 400, fontSize: "clamp(26px,3.4vw,36px)", lineHeight: 1.1, margin: "8px 0 0", color: "var(--ink)" }}>{current.tipoLabel}</h1>
-            <p style={{ fontSize: 12.5, letterSpacing: ".03em", color: "var(--earth)", margin: "8px 0 0" }}>
+            <p style={{ fontSize: 12.5, letterSpacing: ".03em", color: "var(--fg-muted)", margin: "8px 0 0" }}>
               Para {activo.nombre} · enviado el {F.fmtDate(current.enviado)} por Spacio AM
             </p>
           </div>
@@ -712,5 +732,5 @@ function SignExperience({ doc, onUpdate, onExit, stepOverride, onStepChange, pre
 
 Object.assign(window, {
   SendModal, DataRequestModal, SignExperience, SignLightbox, SignaturePad, ScaledDoc, CertificadoSheet,
-  downloadSignedPdf, typedSignatureImage, cleanSignatureImage, firmasDe, ScaledCert, useFitZoom,
+  downloadSignedPdf, typedSignatureImage, cleanSignatureImage, firmasDe, ScaledCert, useFitZoom, SpacioSignModal,
 });

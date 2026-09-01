@@ -58,7 +58,7 @@ function PanelSelect({ value, options, onChange, icon, minWidth = 240, searchabl
         <span style={{ fontWeight: 500, textAlign: "left", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {cur ? cur.label : (placeholder || "")}
         </span>
-        {cur && cur.sub && <span style={{ fontSize: 9.5, letterSpacing: ".16em", textTransform: "uppercase", color: "var(--earth)", flexShrink: 0 }}>{cur.sub}</span>}
+        {cur && cur.sub && <span style={{ fontSize: 9.5, letterSpacing: ".16em", textTransform: "uppercase", color: "var(--fg-muted)", flexShrink: 0 }}>{cur.sub}</span>}
         <PIcon name="chevronDown" size={14} stroke="var(--earth)" />
       </button>
       {open && (
@@ -92,14 +92,14 @@ function PanelSelect({ value, options, onChange, icon, minWidth = 240, searchabl
                   {o.sub ? (
                     <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                       <span style={{ fontWeight: 500 }}>{o.label}</span>
-                      <span style={{ fontSize: 10.5, color: "var(--earth)", letterSpacing: "0.06em" }}>{o.sub}</span>
+                      <span style={{ fontSize: 10.5, color: "var(--fg-muted)", letterSpacing: "0.06em" }}>{o.sub}</span>
                     </span>
                   ) : <span style={{ fontWeight: active ? 500 : 400 }}>{o.label}</span>}
                   {active && <span style={{ marginLeft: "auto", display: "inline-flex" }}><PIcon name="check" size={15} stroke="var(--peach)" /></span>}
                 </button>
               );
             })}
-            {shown.length === 0 && <div style={{ padding: "16px 12px", textAlign: "center", fontFamily: "var(--sans)", fontSize: 12, color: "var(--earth)" }}>Sin resultados</div>}
+            {shown.length === 0 && <div style={{ padding: "16px 12px", textAlign: "center", fontFamily: "var(--sans)", fontSize: 12, color: "var(--fg-muted)" }}>Sin resultados</div>}
           </div>
         </div>
       )}

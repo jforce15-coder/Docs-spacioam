@@ -319,3 +319,9 @@ html,body{overflow-x:hidden;max-width:100%}
 .sa-login-cta{font-size:11.5px;font-weight:500;letter-spacing:.24em;padding:16px;border-radius:14px}
 .sa-login-aside .sa-eyebrow{font-size:11px;letter-spacing:.32em}
 .sa-login-help{position:relative;z-index:2;font-family:var(--sans);font-size:10.5px;font-weight:400;letter-spacing:.18em;text-transform:uppercase;color:var(--fg-muted)}
+
+/* frase de marca del login en Valky Regular */
+.sa-login-quote{font-weight:400;font-style:normal}
+/* aviso de contrafirma pendiente */
+.sa-badge.pendiente{background:var(--peach-12);color:var(--ink)}
+.sa-badge.pendiente>i{background:var(--peach)}

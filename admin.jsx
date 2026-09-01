@@ -22,7 +22,7 @@ const LOGIN_T = {
     enter: "Entrar", create: "Crear contraseña",
     err: "Usuario o contraseña incorrectos.",
     first: "Es tu primer ingreso. Crea una contraseña (mínimo 6 caracteres).",
-    quote: "Hay espacios en donde sueñas con volver a despertar",
+    quote: "Hay espacios donde despertar se siente como un sueño.",
     aside: "Spacio AM · Contratos",
     help: "Guatemala · ¿Necesitas ayuda? hola@spacioam.com",
   },
@@ -34,8 +34,9 @@ const LOGIN_T = {
     forgot: "Forgot your password?",
     enter: "Sign in", create: "Create password",
     err: "Incorrect user or password.",
+    /* La frase de marca no se traduce: es el claim de Spacio AM. */
     first: "This is your first sign-in. Create a password (6 characters minimum).",
-    quote: "There are spaces where you dream of waking up again",
+    quote: "Hay espacios donde despertar se siente como un sueño.",
     aside: "Spacio AM · Contracts",
     help: "Guatemala · Need help? hola@spacioam.com",
   },
@@ -128,7 +129,7 @@ function AdminLogin({ onLogin, lang, setLang }) {
               <input value={pass} type={show ? "text" : "password"} placeholder={L.pass_ph}
                 onChange={(e) => { setPass(e.target.value); setErr(false); }} style={{ paddingRight: 46 }} />
               <button type="button" onClick={() => setShow((s) => !s)} aria-label={L.pass}
-                style={{ position: "absolute", right: 12, background: "transparent", border: "none", cursor: "pointer", color: "var(--earth)", display: "flex", padding: 4 }}>
+                style={{ position: "absolute", right: 12, background: "transparent", border: "none", cursor: "pointer", color: "var(--fg-muted)", display: "flex", padding: 4 }}>
                 <Ico name={show ? "eyeOff" : "eye"} size={18} />
               </button>
             </div>
@@ -184,7 +185,7 @@ function AdminTopBar({ user, lang, setLang, notiTotal, onNotiOpen, onAccount, on
               <div className="sa-menu">
                 <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--warm-grey)" }}>
                   <div style={{ fontFamily: "var(--serif)", fontSize: 18, color: "var(--ink)", lineHeight: 1.1 }}>{user.name}</div>
-                  <div style={{ fontSize: 11, letterSpacing: ".06em", color: "var(--earth)", marginTop: 3 }}>{user.email}</div>
+                  <div style={{ fontSize: 11, letterSpacing: ".06em", color: "var(--fg-muted)", marginTop: 3 }}>{user.email}</div>
                 </div>
                 <button className="sa-menu-item" onClick={() => { setMenu(false); onAccount(); }}>
                   <Ico name="user" size={16} stroke="var(--fg-muted)" /> {T("nav_account")}
@@ -193,7 +194,7 @@ function AdminTopBar({ user, lang, setLang, notiTotal, onNotiOpen, onAccount, on
                   <Ico name="grid" size={16} stroke="var(--fg-muted)" /> {T("nav_setup")}
                 </button>
                 <div style={{ padding: "12px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, borderTop: "1px solid var(--warm-grey)", borderBottom: "1px solid var(--warm-grey)" }}>
-                  <span style={{ fontSize: 10.5, letterSpacing: ".2em", textTransform: "uppercase", color: "var(--earth)" }}>{T("language_label")}</span>
+                  <span style={{ fontSize: 10.5, letterSpacing: ".2em", textTransform: "uppercase", color: "var(--fg-muted)" }}>{T("language_label")}</span>
                   <div className="sa-seg">
                     <button className={lang === "es" ? "on" : ""} onClick={() => setLang("es")}>ES</button>
                     <button className={lang === "en" ? "on" : ""} onClick={() => setLang("en")}>EN</button>
@@ -261,6 +262,10 @@ function DocDetail({ doc, onClose, onChange, onSign, onToast, lang, perms, staff
   /* Gestionar el registro (reenviar, cancelar, anular, eliminar) exige
      el permiso "admin"; el firmante solo lee y descarga su copia. */
   const gestion = !!(perms && perms.admin);
+  /* Quien firma por Spacio AM: el administrador principal o quien tenga
+     el permiso de firmar. La contrafirma ya no es automática. */
+  const puedeFirmarSpacio = !!(perms && (perms.admin || perms.firmar));
+  const [firmaSpacio, setFirmaSpacio] = useS(false);
   const F = window.Docs;
   const [busy, setBusy] = useS("");
   if (!doc) return null;
@@ -292,7 +297,10 @@ function DocDetail({ doc, onClose, onChange, onSign, onToast, lang, perms, staff
           <div>
             <div className="sa-eyebrow">{doc.folio} · {window.SpacioT.categoria(lang, doc.categoria)}</div>
             <h2 className="sa-modal-title">{doc.tipoLabel}</h2>
-            <div style={{ marginTop: 12 }}><span className={"sa-badge " + est.cls}><i />{window.SpacioT.estado(lang, doc.estado)}</span></div>
+            <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <span className={"sa-badge " + est.cls}><i />{window.SpacioT.estado(lang, doc.estado)}</span>
+              {!cerrado && !doc.firmaSpacio && <span className="sa-badge pendiente"><i />Falta la firma de Spacio AM</span>}
+            </div>
           </div>
           <button className="sa-x" onClick={onClose} aria-label="Cerrar">×</button>
         </div>
@@ -302,7 +310,7 @@ function DocDetail({ doc, onClose, onChange, onSign, onToast, lang, perms, staff
               <div className="sa-row" key={f.id}>
                 <span className="sa-row-k">Firmante {(doc.firmantes || []).length > 1 ? i + 1 : ""}</span>
                 <span className="sa-row-v">{f.nombre}<br />{f.email}<br />
-                  <span style={{ fontSize: 11, color: "var(--earth)" }}>{f.firma ? "Firmado " + F.fmtDateTime(f.firma.ts) : "Pendiente de firma"}</span>
+                  <span style={{ fontSize: 11, color: "var(--fg-muted)" }}>{f.firma ? "Firmado " + F.fmtDateTime(f.firma.ts) : "Pendiente de firma"}</span>
                 </span>
               </div>
             ))}
@@ -310,7 +318,7 @@ function DocDetail({ doc, onClose, onChange, onSign, onToast, lang, perms, staff
             <div className="sa-row"><span className="sa-row-k">Enviado</span><span className="sa-row-v">{F.fmtDateTime(doc.enviado)}</span></div>
             {doc.certificado && <div className="sa-row"><span className="sa-row-k">Certificado</span><span className="sa-row-v">{doc.certificado}</span></div>}
             <div className="sa-row"><span className="sa-row-k">Archivo</span><span className="sa-row-v">{window.SpacioSync.fileName(doc)}<br />
-              <span style={{ fontSize: 11, color: "var(--earth)" }}>{window.SpacioSync.drivePath(doc).slice(0, 4).join(" / ")}</span></span></div>
+              <span style={{ fontSize: 11, color: "var(--fg-muted)" }}>{window.SpacioSync.drivePath(doc).slice(0, 4).join(" / ")}</span></span></div>
             {doc.motivo && <div className="sa-row"><span className="sa-row-k">Motivo</span><span className="sa-row-v">{doc.motivo}</span></div>}
           </div>
 
@@ -328,6 +336,11 @@ function DocDetail({ doc, onClose, onChange, onSign, onToast, lang, perms, staff
 
           <div className="sa-actions">
             <button className="sa-btn accent" onClick={() => onSign(doc, true)}>Ver documento</button>
+            {puedeFirmarSpacio && !doc.firmaSpacio && !cerrado && (
+              <button className="sa-btn accent sa-tip" data-tip="Firma este documento por parte de Spacio AM. Puedes hacerlo antes o después de la otra parte." onClick={() => setFirmaSpacio(true)}>
+                Firmar por Spacio AM
+              </button>
+            )}
             {staff && !cerrado && doc.estado !== "firmado" && (
               <button className="sa-btn ghost" onClick={() => {
                 navigator.clipboard.writeText(signLink(doc)).then(
@@ -368,6 +381,10 @@ function DocDetail({ doc, onClose, onChange, onSign, onToast, lang, perms, staff
           </div>
         </div>
       </div>
+      {firmaSpacio && (
+        <SpacioSignModal doc={doc} onClose={() => setFirmaSpacio(false)}
+          onDone={(d) => { setFirmaSpacio(false); onChange(d); onToast(d.estado === "firmado" ? "Documento firmado por ambas partes." : "Firmado por Spacio AM. Falta la otra parte."); }} />
+      )}
     </div>
   );
 }
@@ -577,7 +594,7 @@ function DBPanel({ onToast, lang }) {
 
       <div className="sa-card" style={{ padding: "20px 22px", marginBottom: 18 }}>
         <div className="sa-eyebrow" style={{ marginBottom: 12 }}>{T("db_cols")} {H.nombre}</div>
-        <p style={{ fontSize: 12.5, letterSpacing: ".03em", color: "var(--earth)", margin: "0 0 16px" }}>{H.nota}</p>
+        <p style={{ fontSize: 12.5, letterSpacing: ".03em", color: "var(--fg-muted)", margin: "0 0 16px" }}>{H.nota}</p>
         <div className="db-cols">
           {H.cols.map((c) => (
             <div className="db-col" key={c[0]}>
@@ -614,7 +631,7 @@ function DBPanel({ onToast, lang }) {
 
       <div className="sa-card" style={{ padding: "20px 22px", marginTop: 18 }}>
         <div className="sa-eyebrow" style={{ marginBottom: 12 }}>{T("db_auto")}</div>
-        <p style={{ fontSize: 12.5, lineHeight: 1.7, letterSpacing: ".03em", color: "var(--earth)", margin: "0 0 16px" }}>{T("db_auto_note")}</p>
+        <p style={{ fontSize: 12.5, lineHeight: 1.7, letterSpacing: ".03em", color: "var(--fg-muted)", margin: "0 0 16px" }}>{T("db_auto_note")}</p>
         <label className="sa-field">
           <span>{T("db_url")}</span>
           <input value={ep} placeholder="https://script.google.com/macros/s/…/exec" onChange={(e) => setEp(e.target.value)} />
@@ -694,7 +711,7 @@ function AdminApp() {
             <h1 style={{ fontFamily: "var(--serif)", fontWeight: 400, fontSize: 34, lineHeight: 1.1, margin: 0, color: "var(--ink)" }}>
               Abriendo tu documento…
             </h1>
-            <p style={{ fontSize: 13.5, lineHeight: 1.7, color: "var(--earth)", margin: 0 }}>
+            <p style={{ fontSize: 13.5, lineHeight: 1.7, color: "var(--fg-muted)", margin: 0 }}>
               Un momento, lo estamos trayendo del registro de Spacio AM.
             </p>
           </div>
@@ -710,7 +727,7 @@ function AdminApp() {
             <h1 style={{ fontFamily: "var(--serif)", fontWeight: 400, fontSize: 34, lineHeight: 1.1, margin: 0, color: "var(--ink)" }}>
               Este enlace ya no está disponible.
             </h1>
-            <p style={{ fontSize: 13.5, lineHeight: 1.7, color: "var(--earth)", margin: 0 }}>
+            <p style={{ fontSize: 13.5, lineHeight: 1.7, color: "var(--fg-muted)", margin: 0 }}>
               Puede que el documento se haya cancelado o que el enlace esté incompleto. Escríbenos a hola@spacioam.com y te enviamos uno nuevo.
             </p>
           </div>
@@ -726,7 +743,7 @@ function AdminApp() {
             <h1 style={{ fontFamily: "var(--serif)", fontWeight: 400, fontSize: 34, lineHeight: 1.1, margin: 0, color: "var(--ink)" }}>
               Este documento ya no requiere tu firma.
             </h1>
-            <p style={{ fontSize: 13.5, lineHeight: 1.7, color: "var(--earth)", margin: 0 }}>
+            <p style={{ fontSize: 13.5, lineHeight: 1.7, color: "var(--fg-muted)", margin: 0 }}>
               El envío fue {d.estado === "cancelado" ? "cancelado" : "anulado"}. Si esperabas firmarlo, escríbenos a hola@spacioam.com.
             </p>
           </div>

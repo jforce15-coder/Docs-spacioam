@@ -168,8 +168,11 @@
       d.firmaFirmante = d.firmantes[0] && d.firmantes[0].firma
         ? Object.assign({ nombre: d.firmantes[0].nombre, correo: d.firmantes[0].email }, d.firmantes[0].firma)
         : null;
+      log(d, "Firmado por " + (nombre || d.firmanteNombre));
+      /* Queda cerrado cuando ya firmaron todos, sin importar el orden. */
+      if (faltanFirmas(d) === 0 && d.firmaSpacio) return cerrar(d);
       d.estado = "parcial";
-      return log(d, "Firmado por " + (nombre || d.firmanteNombre));
+      return d;
     });
   }
 
@@ -177,14 +180,23 @@
     return (d.firmantes || []).filter(function (f) { return !f.firma; }).length;
   }
 
-  /* Contrafirma de Spacio AM → documento completo + certificado. */
+  /* Cierre: certificado + acuse, una sola vez y venga de donde venga. */
+  function cerrar(d) {
+    d.estado = "firmado";
+    d.certificado = "SAM-FE-" + d.folio.replace("SAM-", "") + "-" +
+      hash(d.folio + d.firmanteEmail + ((d.firmantes || [])[0] && (d.firmantes || [])[0].firma ? d.firmantes[0].firma.ts : "")).slice(0, 4);
+    return log(d, "Copia firmada enviada a ambas partes");
+  }
+
+  /* Firma por parte de Spacio AM → puede ir antes o después. */
   function signSpacio(id, firma) {
     return update(id, function (d) {
       d.firmaSpacio = { nombre: d.contraparteNombre, correo: d.contraparteEmail, img: (firma && firma.img) || null, metodo: (firma && firma.metodo) || "typed", ts: nowISO(), ip: "registrada al firmar" };
-      d.estado = "firmado";
-      d.certificado = "SAM-FE-" + d.folio.replace("SAM-", "") + "-" + hash(d.folio + d.firmanteEmail + ((d.firmantes || [])[0] && (d.firmantes || [])[0].firma ? d.firmantes[0].firma.ts : "")).slice(0, 4);
+      /* Spacio AM puede firmar antes que la otra parte: solo queda
+         "firmado" cuando ya no falta ninguna firma. */
       log(d, "Firmado por " + d.contraparteNombre + " (Spacio AM)");
-      return log(d, "Copia firmada enviada a ambas partes");
+      if (faltanFirmas(d) > 0) { d.estado = "parcial"; return d; }
+      return cerrar(d);
     });
   }
 
