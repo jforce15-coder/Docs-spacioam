@@ -233,7 +233,7 @@
       fechaFirmante: doc.firmaFirmante ? F.fmtDateTime(doc.firmaFirmante.ts) : "pendiente",
       fechaSpacio: doc.firmaSpacio ? F.fmtDateTime(doc.firmaSpacio.ts) : "pendiente",
       enviado: F.relative(doc.enviado), fecha: F.fmtDateTime(doc.enviado),
-      url: (window.SPACIO_FIRMA_BASE || "https://contratos.spacioam.com/index.html") + "?firmar=" + doc.id,
+      url: (window.SPACIO_FIRMA_BASE || "https://docs.spacioam.com/index.html") + "?firmar=" + doc.id,
     }, extra || {});
     var ASUNTOS = {
       solicitudFirma: "Tu " + (doc.tipoLabel || "documento").toLowerCase() + " está listo para firmar",

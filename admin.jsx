@@ -626,6 +626,7 @@ function AdminApp() {
   const [toast, setToast] = useS("");
   const [refreshKey, setRefreshKey] = useS(0);
   const [publicKey, setPublicKey] = useS(0);
+  const [sincronizado, setSincronizado] = useS(false);
   const firmarId = (function () { try { return new URLSearchParams(location.search).get("firmar"); } catch (e) { return null; } })();
   const [lang, setLang] = useS(() => { try { return localStorage.getItem("spacio_contratos_lang") || "es"; } catch (e) { return "es"; } });
   const [notiOpen, setNotiOpen] = useS(false);
@@ -634,6 +635,23 @@ function AdminApp() {
   const T = (k) => window.SpacioT.t(lang, k);
 
   useE(() => { try { localStorage.setItem("spacio_contratos_lang", lang); } catch (e) {} }, [lang]);
+
+  /* Registro compartido: al abrir se traen de la hoja los documentos
+     generados en las dos apps (Grow y Docs), y se vuelve a traer cada vez
+     que la pestaña recupera el foco. Sin esto, el panel solo veía lo que
+     este navegador había creado. */
+  useE(() => {
+    const S = window.SpacioSync;
+    if (!S || !S.endpoint()) { setSincronizado(true); return; }
+    let vivo = true;
+    const traer = () => S.pull()
+      .then(() => { if (!vivo) return; setSincronizado(true); setRefreshKey((k) => k + 1); setPublicKey((k) => k + 1); })
+      .catch(() => { if (vivo) setSincronizado(true); });
+    traer();
+    const alVolver = () => { if (document.visibilityState === "visible") traer(); };
+    document.addEventListener("visibilitychange", alVolver);
+    return () => { vivo = false; document.removeEventListener("visibilitychange", alVolver); };
+  }, []);
   const persistNoti = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
   const dismissNoti = (n) => setNotiDismiss((p) => { const u = Object.assign({}, p, { [n.id]: 1 }); persistNoti("sam:contratosNotiDismiss", u); return u; });
   const snoozeNoti = (n) => setNotiSnooze((p) => { const u = Object.assign({}, p, { [n.id]: Date.now() + 86400000 }); persistNoti("sam:contratosNotiSnooze", u); return u; });
@@ -648,6 +666,24 @@ function AdminApp() {
   /* Ruta pública: cualquiera con el enlace puede leer y firmar, sin usuario. */
   if (firmarId) {
     const d = window.Docs.get(firmarId);
+    /* El documento puede venir de la otra app: se espera a la hoja antes
+       de dar el enlace por vencido. */
+    if (!d && !sincronizado) {
+      return (
+        <div className="sign-page">
+          <div className="sign-top"><LogoPrimary width={92} /></div>
+          <div className="sign-done">
+            <div className="sa-eyebrow">Enlace de firma</div>
+            <h1 style={{ fontFamily: "var(--serif)", fontWeight: 400, fontSize: 34, lineHeight: 1.1, margin: 0, color: "var(--ink)" }}>
+              Abriendo tu documento…
+            </h1>
+            <p style={{ fontSize: 13.5, lineHeight: 1.7, color: "var(--earth)", margin: 0 }}>
+              Un momento, lo estamos trayendo del registro de Spacio AM.
+            </p>
+          </div>
+        </div>
+      );
+    }
     if (!d) {
       return (
         <div className="sign-page">

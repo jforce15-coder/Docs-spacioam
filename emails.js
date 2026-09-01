@@ -25,7 +25,7 @@
      despedida, nota al pie y pie de marca. */
   /* Las imágenes se sirven siempre desde la app de contratos, para que
      el correo salga idéntico se envíe desde Grow o desde Docs. */
-  var HOST = window.SPACIO_MAIL_HOST || "https://contratos.spacioam.com/";
+  var HOST = window.SPACIO_MAIL_HOST || "https://docs.spacioam.com/";
   var LOGO = HOST + "assets/email/logo-wordmark.png";
   var IMG = HOST + "assets/email/";
 
@@ -126,7 +126,7 @@
           ["Folio", d.folio || "SAM-000128"],
           ["Válido hasta", d.vence || "en 14 días"],
         ],
-        cta: { label: "Revisar y firmar", url: d.url || "https://contratos.spacioam.com/firmar" },
+        cta: { label: "Revisar y firmar", url: d.url || "https://docs.spacioam.com/firmar" },
         footerNote: "Este enlace es personal: solo funciona con tu correo (" + (d.correo || "correo@ejemplo.com") + "). Si algo en el documento no coincide con lo que conversamos, respóndenos este correo antes de firmar.",
         signoff: "Con cariño,\nEl equipo de Spacio AM",
       });
@@ -151,7 +151,7 @@
           ["Enviado", d.enviado || "hace 3 días"],
           ["Folio", d.folio || "SAM-000128"],
         ],
-        cta: { label: "Abrir y firmar", url: d.url || "https://contratos.spacioam.com/firmar" },
+        cta: { label: "Abrir y firmar", url: d.url || "https://docs.spacioam.com/firmar" },
         signoff: "Gracias,\nEl equipo de Spacio AM",
       });
     },
@@ -175,7 +175,7 @@
           ["Firmado por", (d.contraparte || "Juan Francisco Ovalle Lanuza") + " · " + (d.fechaSpacio || "14 ago 2026, 11:08")],
           ["Certificado", d.certificado || "SAM-FE-000128-A1F4"],
         ],
-        cta: { label: "Descargar copia en PDF", url: d.url || "https://contratos.spacioam.com/copia" },
+        cta: { label: "Descargar copia en PDF", url: d.url || "https://docs.spacioam.com/copia" },
         footerNote: "El certificado registra fecha, hora, correo y huella del documento de cada firma. Si detectas algo distinto a lo acordado, escríbenos y lo revisamos.",
         signoff: "Con cariño,\nEl equipo de Spacio AM",
       });
@@ -221,7 +221,7 @@
           ["Propiedad", "Dirección, edificio, apartamento y nivel"],
           ["Facturación", "Régimen fiscal y NIT"],
         ]),
-        cta: { label: "Completar mis datos", url: d.url || "https://contratos.spacioam.com/datos" },
+        cta: { label: "Completar mis datos", url: d.url || "https://docs.spacioam.com/datos" },
         footerNote: "Usamos estos datos únicamente para redactar tu documento. Si prefieres enviárnoslos por aquí, responde este correo.",
         signoff: "Con cariño,\nEl equipo de Spacio AM",
       });
