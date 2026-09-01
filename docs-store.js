@@ -113,7 +113,7 @@
       propiedad: payload.propiedad || "",
       origen: payload.origen || (window.SPACIO_DOCS_ORIGEN || "docs"),
       contraparteNombre: payload.contraparteNombre || "Juan Francisco Ovalle Lanuza",
-      contraparteEmail: payload.contraparteEmail || "administracion@spacioam.com",
+      contraparteEmail: payload.contraparteEmail || "jovalle@spacioam.com",
       mensaje: payload.mensaje || "",
       data: payload.data || {},
       custom: payload.custom || null,
