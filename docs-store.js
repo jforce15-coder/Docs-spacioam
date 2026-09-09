@@ -176,6 +176,46 @@
     });
   }
 
+  /* ── Conciliación manual ─────────────────────────────────────
+     Para el caso en que alguien firmó de verdad pero la firma nunca
+     llegó al registro (y ya no se puede recuperar de su navegador).
+     No es una firma nueva: es el acta de una firma que ya ocurrió.
+     Por eso exige constancia — quién concilia, cuándo firmó de
+     verdad y con qué evidencia — y queda marcada como conciliada
+     para siempre, en la firma y en el historial. */
+  function conciliar(id, firmanteId, datos) {
+    return update(id, function (d) {
+      var nombre = "";
+      var ts = datos.ts || nowISO();
+      var firma = {
+        img: datos.img || null,
+        metodo: datos.metodo || "conciliada",
+        ts: ts,
+        ip: "conciliada manualmente",
+        conciliada: { por: datos.por || "Administración", nota: datos.nota || "", ts: nowISO() },
+      };
+      if (firmanteId === "spacio") {
+        d.firmaSpacio = Object.assign({ nombre: d.contraparteNombre, correo: d.contraparteEmail }, firma);
+        nombre = d.contraparteNombre + " (Spacio AM)";
+      } else {
+        d.firmantes = (d.firmantes || []).map(function (f) {
+          if (f.id !== firmanteId) return f;
+          nombre = f.nombre;
+          return Object.assign({}, f, { firma: firma });
+        });
+        d.firmaFirmante = d.firmantes[0] && d.firmantes[0].firma
+          ? Object.assign({ nombre: d.firmantes[0].nombre, correo: d.firmantes[0].email }, d.firmantes[0].firma)
+          : null;
+      }
+      d.conciliado = true;
+      log(d, "Firma de " + (nombre || "la otra parte") + " conciliada manualmente por " + (datos.por || "Administración") +
+        " · firmó el " + fmtDateTime(ts) + (datos.nota ? " · " + datos.nota : ""));
+      if (faltanFirmas(d) === 0 && d.firmaSpacio) return cerrar(d);
+      d.estado = "parcial";
+      return d;
+    });
+  }
+
   function faltanFirmas(d) {
     return (d.firmantes || []).filter(function (f) { return !f.firma; }).length;
   }
@@ -312,6 +352,7 @@
     ESTADOS: ESTADOS, TIPO_LABEL: TIPO_LABEL, CATEGORIA: CATEGORIA,
     all: all, get: get, create: create, update: update, remove: remove, resend: resend,
     markVisto: markVisto, signFirmante: signFirmante, signSpacio: signSpacio, faltanFirmas: faltanFirmas,
+    conciliar: conciliar,
     cancel: cancel, voidDoc: voidDoc,
     fmtDate: fmtDate, fmtDateTime: fmtDateTime, relative: relative, hash: hash,
   };
