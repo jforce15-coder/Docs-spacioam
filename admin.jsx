@@ -257,90 +257,6 @@ function DocsTable({ docs, onOpen, lang }) {
 }
 
 /* ─── Detalle del documento ───────────────────────────────── */
-/* ─── Conciliación manual de una firma ────────────────────── */
-/* Se usa cuando la firma ocurrió de verdad pero nunca llegó al
-   registro. No firmamos por nadie: levantamos el acta de una firma
-   que ya existe, con su fecha real y la constancia de dónde consta. */
-function ConciliarModal({ doc, firmante, por, onClose, onDone }) {
-  const F = window.Docs;
-  const localISO = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-  const [cuando, setCuando] = useS(() => localISO(new Date()));
-  const [nota, setNota] = useS("");
-  const [img, setImg] = useS(null);
-  const [busy, setBusy] = useS("");
-  const esSpacio = firmante.id === "spacio";
-
-  const subir = (e) => {
-    const f = e.target.files && e.target.files[0];
-    if (!f) return;
-    const r = new FileReader();
-    r.onload = () => window.cleanSignatureImage(String(r.result)).then(setImg).catch(() => setImg(String(r.result)));
-    r.readAsDataURL(f);
-  };
-
-  const conciliar = async () => {
-    if (!nota.trim()) return;
-    setBusy("Conciliando…");
-    const firma = img ? { img: img, metodo: "conciliada-imagen" }
-                      : { img: window.typedSignatureImage(firmante.nombre), metodo: "conciliada-escrita" };
-    const d = F.conciliar(doc.id, firmante.id, {
-      img: firma.img, metodo: firma.metodo, nota: nota.trim(), por: por,
-      ts: new Date(cuando).toISOString(),
-    });
-    if (window.SpacioSync) {
-      const r = await window.SpacioSync.push("conciliar", d);
-      if (r && !r.ok) window.alert("La conciliación quedó guardada, pero el registro compartido no confirmó. Se reintentará automáticamente.");
-      if (d.estado === "firmado") window.SpacioSync.correo("copiaFirmada", d);
-    }
-    setBusy("");
-    onDone(d);
-  };
-
-  return (
-    <div className="sa-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="sa-modal" style={{ maxWidth: 560 }}>
-        <div className="sa-modal-head">
-          <div>
-            <div className="sa-eyebrow">{doc.folio} · Conciliación manual</div>
-            <h2 className="sa-modal-title">Registrar la firma de {firmante.nombre}</h2>
-          </div>
-          <button className="sa-x" onClick={onClose} aria-label="Cerrar">×</button>
-        </div>
-        <div className="sa-modal-body">
-          <div className="sa-note"><span>
-            Esto no firma por {esSpacio ? "Spacio AM" : firmante.nombre.split(" ")[0]}: registra en el expediente una firma que ya ocurrió
-            y que el sistema no alcanzó a guardar. Queda marcada como conciliada, con tu nombre y la fecha real de la firma.
-          </span></div>
-          <label className="sa-field"><span>Cuándo firmó</span>
-            <input type="datetime-local" value={cuando} onChange={(e) => setCuando(e.target.value)} />
-            <div className="sa-field-hint">La fecha y hora que aparecen en la copia que ya recibieron.</div>
-          </label>
-          <label className="sa-field"><span>Dónde consta</span>
-            <textarea rows={3} value={nota} onChange={(e) => setNota(e.target.value)}
-              placeholder="Ej.: consta en la copia firmada recibida por correo el 1 sep 2026, certificado SAM-FE-000128." />
-            <div className="sa-field-hint">Obligatorio. Es la constancia de por qué se concilia.</div>
-          </label>
-          <div className="sa-field"><span>Imagen de la firma</span>
-            <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-              {img && <img src={img} alt="Firma conciliada" style={{ height: 54, background: "var(--surface)", border: "1px solid var(--warm-grey)", borderRadius: 10, padding: "4px 10px" }} />}
-              <label className="sa-btn ghost" style={{ cursor: "pointer" }}>
-                {img ? "Cambiar imagen" : "Subir de la copia firmada"}
-                <input type="file" accept="image/*" onChange={subir} style={{ display: "none" }} />
-              </label>
-              {img && <button className="sa-btn ghost" onClick={() => setImg(null)}>Quitar</button>}
-            </div>
-            <div className="sa-field-hint">Opcional. Si no la subes, se registra el nombre escrito y la nota deja constancia del origen.</div>
-          </div>
-          <div className="sa-actions">
-            <button className="sa-btn dark" disabled={!nota.trim() || !!busy} onClick={conciliar}>{busy || "Conciliar firma"}</button>
-            <button className="sa-btn ghost" onClick={onClose}>Cancelar</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function DocDetail({ doc, onClose, onChange, onSign, onToast, lang, perms, staff, user }) {
   const T = (k) => window.SpacioT.t(lang, k);
   /* Gestionar el registro (reenviar, cancelar, anular, eliminar) exige
@@ -350,7 +266,6 @@ function DocDetail({ doc, onClose, onChange, onSign, onToast, lang, perms, staff
      el permiso de firmar. La contrafirma ya no es automática. */
   const puedeFirmarSpacio = !!(perms && (perms.admin || perms.firmar));
   const [firmaSpacio, setFirmaSpacio] = useS(false);
-  const [conciliar, setConciliar] = useS(null);
   const F = window.Docs;
   const [busy, setBusy] = useS("");
   if (!doc) return null;
@@ -396,24 +311,10 @@ function DocDetail({ doc, onClose, onChange, onSign, onToast, lang, perms, staff
                 <span className="sa-row-k">Firmante {(doc.firmantes || []).length > 1 ? i + 1 : ""}</span>
                 <span className="sa-row-v">{f.nombre}<br />{f.email}<br />
                   <span style={{ fontSize: 11, color: "var(--fg-muted)" }}>{f.firma ? "Firmado " + F.fmtDateTime(f.firma.ts) : "Pendiente de firma"}</span>
-                  {f.firma && f.firma.conciliada && (
-                    <><br /><span style={{ fontSize: 11, color: "var(--attention-text, #B54D36)" }}>
-                      Firma conciliada manualmente por {f.firma.conciliada.por}{f.firma.conciliada.nota ? " · " + f.firma.conciliada.nota : ""}
-                    </span></>
-                  )}
-                  {!f.firma && gestion && !cerrado && (
-                    <><br /><button className="sa-btn ghost sa-tip" style={{ marginTop: 8 }}
-                      data-tip="Si esta persona ya firmó y la firma no llegó al registro, regístrala aquí con su fecha real y la constancia."
-                      onClick={() => setConciliar({ id: f.id, nombre: f.nombre })}>Conciliar firma</button></>
-                  )}
                 </span>
               </div>
             ))}
-            <div className="sa-row"><span className="sa-row-k">Por Spacio AM</span><span className="sa-row-v">{doc.contraparteNombre}<br />{doc.contraparteEmail}
-              {doc.firmaSpacio && doc.firmaSpacio.conciliada && (
-                <><br /><span style={{ fontSize: 11, color: "var(--attention-text, #B54D36)" }}>Firma conciliada manualmente por {doc.firmaSpacio.conciliada.por}</span></>
-              )}
-            </span></div>
+            <div className="sa-row"><span className="sa-row-k">Por Spacio AM</span><span className="sa-row-v">{doc.contraparteNombre}<br />{doc.contraparteEmail}</span></div>
             <div className="sa-row"><span className="sa-row-k">Enviado</span><span className="sa-row-v">{F.fmtDateTime(doc.enviado)}</span></div>
             {doc.certificado && <div className="sa-row"><span className="sa-row-k">Certificado</span><span className="sa-row-v">{doc.certificado}</span></div>}
             <div className="sa-row"><span className="sa-row-k">Archivo</span><span className="sa-row-v">{window.SpacioSync.fileName(doc)}<br />
@@ -483,11 +384,6 @@ function DocDetail({ doc, onClose, onChange, onSign, onToast, lang, perms, staff
       {firmaSpacio && (
         <SpacioSignModal doc={doc} onClose={() => setFirmaSpacio(false)}
           onDone={(d) => { setFirmaSpacio(false); onChange(d); onToast(d.estado === "firmado" ? "Documento firmado por ambas partes." : "Firmado por Spacio AM. Falta la otra parte."); }} />
-      )}
-      {conciliar && (
-        <ConciliarModal doc={doc} firmante={conciliar} por={(user && (user.nombre || user.email)) || "Administración"}
-          onClose={() => setConciliar(null)}
-          onDone={(d) => { setConciliar(null); onChange(d); onToast(d.estado === "firmado" ? "Firma conciliada. El documento quedó firmado por ambas partes." : "Firma conciliada. Falta la otra parte."); }} />
       )}
     </div>
   );

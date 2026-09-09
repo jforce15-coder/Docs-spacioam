@@ -456,9 +456,7 @@ function CertificadoSheet({ doc }) {
     nombre: f.nombre, correo: f.email, firma: f.firma,
   })).concat([{ rol: "Por Spacio AM, Sociedad Anónima", nombre: doc.contraparteNombre, correo: doc.contraparteEmail, firma: doc.firmaSpacio }]);
 
-  const metodoLbl = (m) => m === "drawn" ? "firma trazada" : m === "uploaded" ? "imagen de firma"
-    : m === "conciliada-imagen" ? "imagen de la copia firmada" : m === "conciliada-escrita" || m === "conciliada" ? "firma conciliada" : "firma escrita";
-  const conciliadas = partes.filter((p) => p.firma && p.firma.conciliada);
+  const metodoLbl = (m) => m === "drawn" ? "firma trazada" : m === "uploaded" ? "imagen de firma" : "firma escrita";
 
   return (
     <div className="sheet">
@@ -481,7 +479,6 @@ function CertificadoSheet({ doc }) {
                 {p.correo}<br />
                 {p.firma ? F.fmtDateTime(p.firma.ts) + " · " + metodoLbl(p.firma.metodo) : "—"}<br />
                 {p.firma ? "Origen: " + (p.firma.ip || "registrado al firmar") : ""}
-                {p.firma && p.firma.conciliada ? <><br />Conciliada por {p.firma.conciliada.por} el {F.fmtDateTime(p.firma.conciliada.ts)}</> : null}
               </div>
             </div>
           ))}
@@ -490,7 +487,6 @@ function CertificadoSheet({ doc }) {
           Las partes aceptaron firmar este documento por medios electrónicos. Cada firma quedó registrada con nombre,
           correo, fecha, hora, método y huella del documento. Cualquier modificación posterior altera la huella y, con
           ella, invalida este certificado. Copia archivada por Spacio AM junto con el contrato firmado.
-          {conciliadas.length ? " Una o más firmas se registraron por conciliación manual: la firma se otorgó electrónicamente en la fecha indicada y Administración la asentó en el expediente al confirmarse que no se había guardado en el registro. " + conciliadas.map(function (p) { return p.nombre + ": " + (p.firma.conciliada.nota || "consta en la copia firmada recibida por las partes") + "."; }).join(" ") : ""}
         </p>
       </div>
     </div>
