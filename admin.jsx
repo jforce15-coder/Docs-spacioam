@@ -390,6 +390,33 @@ function DocDetail({ doc, onClose, onChange, onSign, onToast, lang, perms, staff
 }
 
 /* ─── Pestaña: documentos ─────────────────────────────────── */
+/* Aviso: firmas registradas en un navegador que la hoja no confirmó.
+   Antes esto era invisible y el panel mostraba el documento pendiente
+   aunque la firma ya existiera. */
+function SyncPendiente() {
+  const S = window.SpacioSync;
+  const [n, setN] = useS(() => (S && S.pendientes ? S.pendientes() : 0));
+  const [busy, setBusy] = useS(false);
+  useE(() => {
+    if (!S || !S.pendientes) return;
+    const t = setInterval(() => setN(S.pendientes()), 4000);
+    return () => clearInterval(t);
+  }, []);
+  if (!n) return null;
+  const reintentar = () => {
+    setBusy(true);
+    S.flush().then((r) => { setN(r ? r.pendientes : S.pendientes()); setBusy(false); });
+  };
+  return (
+    <div className="sa-sync-pend">
+      <span>
+        {n === 1 ? "1 firma registrada en este dispositivo" : n + " firmas registradas en este dispositivo"} sin confirmar en el registro compartido.
+      </span>
+      <button className="sa-btn ghost" onClick={reintentar} disabled={busy}>{busy ? "Reintentando…" : "Reintentar"}</button>
+    </div>
+  );
+}
+
 function DocsPanel({ onSign, onToast, onNuevo, refreshKey, lang, user, perms, staff }) {
   const F = window.Docs;
   const T = (k) => window.SpacioT.t(lang, k);
@@ -441,6 +468,8 @@ function DocsPanel({ onSign, onToast, onNuevo, refreshKey, lang, user, perms, st
           <div className="sa-kpi" key={k[0]}><div className="sa-kpi-lbl">{k[0]}</div><div className="sa-kpi-val">{k[1]}</div></div>
         ))}
       </div>
+
+      <SyncPendiente />
 
       <div className="sa-filter-bar">
         <span className="sa-admin-badge">{T("filters")}</span>
@@ -678,7 +707,7 @@ function AdminApp() {
     const S = window.SpacioSync;
     if (!S || !S.endpoint()) { setSincronizado(true); return; }
     let vivo = true;
-    const traer = () => S.pull()
+    const traer = () => S.flush().then(() => S.pull())
       .then(() => { if (!vivo) return; setSincronizado(true); setRefreshKey((k) => k + 1); setPublicKey((k) => k + 1); })
       .catch(() => { if (vivo) setSincronizado(true); });
     traer();

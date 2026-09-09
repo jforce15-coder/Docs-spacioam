@@ -545,7 +545,8 @@ function SpacioSignModal({ doc, onClose, onDone }) {
     setBusy("Firmando…");
     const d = F.signSpacio(doc.id, { img, metodo });
     if (window.SpacioSync) {
-      window.SpacioSync.push("firmar", d);
+      const r = await window.SpacioSync.push("firmar", d);
+      if (r && !r.ok) window.alert("Tu firma quedó guardada, pero el registro compartido no confirmó. La reintentaremos automáticamente.");
       if (d.estado === "firmado") window.SpacioSync.correo("copiaFirmada", d);
     }
     setBusy("");
@@ -564,6 +565,7 @@ function SignExperience({ doc, onUpdate, onExit, stepOverride, onStepChange, pre
   const step = stepOverride || ownStep;
   const [lightbox, setLightbox] = React.useState(false);
   const [busy, setBusy] = React.useState("");
+  const [syncPend, setSyncPend] = React.useState(false);
   const [live, setLive] = React.useState(doc);
 
   React.useEffect(() => { setLive(doc); }, [doc.id, doc.estado]);
@@ -591,6 +593,15 @@ function SignExperience({ doc, onUpdate, onExit, stepOverride, onStepChange, pre
 
   React.useEffect(() => { if (stepOverride === 2 && !firmadoTodo) setLightbox(true); if (stepOverride && stepOverride !== 2) setLightbox(false); }, [stepOverride, firmadoTodo]);
 
+  /* Reintento silencioso mientras la firma no esté en el registro. */
+  React.useEffect(() => {
+    if (!syncPend || !window.SpacioSync) return;
+    const t = setInterval(() => {
+      window.SpacioSync.flush().then((r) => { if (r && !r.pendientes) setSyncPend(false); });
+    }, 15000);
+    return () => clearInterval(t);
+  }, [syncPend]);
+
   const firmar = async ({ img, metodo }) => {
     if (preview) {
       /* vista previa: se muestra el resultado sin escribir en el registro */
@@ -613,7 +624,18 @@ function SignExperience({ doc, onUpdate, onExit, stepOverride, onStepChange, pre
     let d = F.signFirmante(current.id, activo.id, { img, metodo });
     setLive(d); if (onUpdate) onUpdate(d);
     setLightbox(false);
-    if (window.SpacioSync) window.SpacioSync.push("firmar", d);
+    /* La firma se registra en la hoja compartida ANTES de dar el paso por
+       terminado: si esa escritura falla, queda en la bandeja de salida y se
+       reintenta al abrir. Antes se enviaba sin esperar respuesta y una firma
+       podía quedarse solo en este navegador sin que el panel lo supiera. */
+    if (window.SpacioSync) {
+      setBusy("Registrando tu firma…");
+      const r = await window.SpacioSync.push("firmar", d);
+      setSyncPend(!(r && r.ok));
+      /* Si esta firma cerró el documento, la copia sale desde aquí:
+         antes solo se enviaba cuando Spacio AM firmaba de último. */
+      if (r && r.ok && d.estado === "firmado") window.SpacioSync.correo("copiaFirmada", d);
+    }
     /* La firma por parte de Spacio AM ya no es automática: la hace una
        persona desde el panel. Aquí solo se confirma lo firmado. */
     setBusy("");
@@ -660,6 +682,13 @@ function SignExperience({ doc, onUpdate, onExit, stepOverride, onStepChange, pre
               ? "Enviamos la copia en PDF con el certificado de firma a " + (current.firmantes || []).map((f) => f.email).join(", ") + " y a " + current.contraparteEmail + ". Queda archivada en el Drive de contratos de Spacio AM."
               : "Cuando todas las partes firmen, la copia en PDF con su certificado llega al correo de cada firmante y queda archivada en el Drive de contratos."}
           </p>
+          {syncPend && (
+            <div className="sa-rows" style={{ width: "100%", textAlign: "left", borderColor: "var(--accent)", background: "var(--accent-tint, rgba(233,130,106,.12))" }}>
+              <div className="sa-row"><span className="sa-row-k">Sincronización</span><span className="sa-row-v">
+                Tu firma quedó guardada, pero el registro de Spacio AM no la confirmó todavía. No cierres esta página: lo reintentamos en unos segundos.
+              </span></div>
+            </div>
+          )}
           <div className="sa-rows" style={{ width: "100%", textAlign: "left" }}>
             <div className="sa-row"><span className="sa-row-k">Documento</span><span className="sa-row-v">{current.tipoLabel}</span></div>
             <div className="sa-row"><span className="sa-row-k">Certificado</span><span className="sa-row-v">{current.certificado || "—"}</span></div>

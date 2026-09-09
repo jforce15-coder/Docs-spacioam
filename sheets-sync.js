@@ -183,26 +183,105 @@
     }).then(function (r) { return r.json(); }).catch(function (e) { return { ok: false, error: String(e) }; });
   }
 
-  /* Escritura: la fila legible de CONTRATOS/FIRMAS y el documento completo
-     en la hoja DOCUMENTOS, que es la que leen las dos apps. */
+  /* ── Bandeja de salida ───────────────────────────────────────
+     Una firma no puede quedarse solo en el navegador de quien firmó.
+     Si la escritura en la hoja falla (red del firmante, cuota de Apps
+     Script, pestaña que se cierra antes de terminar), el documento se
+     guarda aquí y se reintenta al abrir la app y al recuperar el foco.
+     Antes esto era fire-and-forget: nadie miraba el resultado y la
+     firma se perdía sin dejar rastro. */
+  var OUT_KEY = "spacio_sync_outbox_v1";
+  function outRead() { try { return JSON.parse(localStorage.getItem(OUT_KEY) || "{}"); } catch (e) { return {}; } }
+  function outWrite(o) { try { localStorage.setItem(OUT_KEY, JSON.stringify(o)); } catch (e) {} }
+  /* Cada entrada guarda el documento y qué hoja quedó pendiente. */
+  function enqueue(doc, falta) {
+    if (!doc || !doc.id) return;
+    var o = outRead();
+    o[doc.id] = { doc: doc, falta: falta || { doc: true, legible: true }, ts: new Date().toISOString() };
+    outWrite(o);
+  }
+  function dequeue(id) { var o = outRead(); if (o[id]) { delete o[id]; outWrite(o); } }
+  function pendientes() { return Object.keys(outRead()).length; }
+
+  /* Cuántas firmas lleva un documento — la medida para no perder ninguna. */
+  function firmasCount(d) {
+    if (!d) return -1;
+    return (d.firmantes || []).filter(function (f) { return f && f.firma; }).length + (d.firmaSpacio ? 1 : 0);
+  }
+
+  /* Escritura: son DOS hojas y cuentan como una sola tarea.
+     · DOCUMENTOS  → el registro que leen las dos apps (la autoridad)
+     · CONTRATOS/FIRMAS → la hoja legible que se revisa a mano
+     Si cualquiera de las dos no confirma, el documento queda en la bandeja
+     de salida con la marca de lo que falta, y flush() reintenta solo eso.
+     Nunca se declara firmado con una de las dos hojas atrasada. */
+  function escribir(doc, falta) {
+    var tareas = [];
+    var hacerDoc = !falta || falta.doc !== false;
+    var hacerLegible = !falta || falta.legible !== false;
+    tareas.push(hacerDoc ? post({ action: "guardarDoc", doc: doc }) : Promise.resolve({ ok: true, saltado: true }));
+    var legible = null;
+    if (hacerLegible) {
+      try { legible = { action: "upsertContrato", contrato: CONTRATOS.row(doc), firmas: FIRMAS.rows(doc) }; } catch (e) { legible = null; }
+    }
+    tareas.push(legible ? post(legible) : Promise.resolve({ ok: hacerLegible ? false : true, error: hacerLegible ? "fila_ilegible" : null, saltado: !hacerLegible }));
+    return Promise.all(tareas).then(function (r) {
+      var okDoc = !!(r[0] && r[0].ok), okLegible = !!(r[1] && r[1].ok);
+      if (okDoc && okLegible) dequeue(doc.id);
+      else enqueue(doc, { doc: okDoc ? false : true, legible: okLegible ? false : true });
+      return { ok: okDoc && okLegible, doc: r[0], contrato: r[1], pendientes: pendientes() };
+    }).catch(function (e) {
+      enqueue(doc, { doc: true, legible: true });
+      return { ok: false, error: String(e), pendientes: pendientes() };
+    });
+  }
+
   function push(accion, doc) {
     if (!doc) return Promise.resolve({ ok: false });
-    return Promise.all([
-      post({ action: "upsertContrato", contrato: CONTRATOS.row(doc), firmas: FIRMAS.rows(doc) }),
-      post({ action: "guardarDoc", doc: doc }),
-    ]).then(function (r) { return { ok: !!(r[0] && r[0].ok && r[1] && r[1].ok), contrato: r[0], doc: r[1] }; });
+    return escribir(doc, null);
+  }
+
+  /* Reintenta todo lo que quedó pendiente, uno por uno, y solo la hoja
+     que quedó atrasada. */
+  function flush() {
+    var o = outRead(), ids = Object.keys(o);
+    if (!ids.length) return Promise.resolve({ ok: true, pendientes: 0 });
+    return ids.reduce(function (p, id) {
+      return p.then(function () {
+        var e = o[id];
+        return escribir(e.doc || e, (e && e.falta) || null).catch(function () {});
+      });
+    }, Promise.resolve()).then(function () { return { ok: true, pendientes: pendientes() }; });
   }
 
   /* Lectura: trae TODOS los contratos de la hoja (los de las dos apps)
-     y reconstruye el registro local desde la columna Registro. */
+     y reconstruye el registro local desde la columna Registro.
+     Se fusiona, no se sobreescribe: si este navegador tiene una firma que
+     la hoja todavía no conoce, gana la versión local y se vuelve a subir. */
   function pull() {
     return post({ action: "listarDocs" }).then(function (r) {
       if (!r || !r.ok) return { ok: false, docs: [] };
-      var docs = (r.docs || []).map(function (d) {
+      var remotos = (r.docs || []).map(function (d) {
         if (typeof d === "string") { try { return JSON.parse(d); } catch (e) { return null; } }
         return d;
       }).filter(Boolean);
+      var locales = {};
+      if (F() && F().all) (F().all() || []).forEach(function (d) { locales[d.id] = d; });
+      var vistos = {};
+      var docs = remotos.map(function (rd) {
+        vistos[rd.id] = 1;
+        var ld = locales[rd.id];
+        if (ld && firmasCount(ld) > firmasCount(rd)) { enqueue(ld); return ld; }
+        return rd;
+      });
+      Object.keys(locales).forEach(function (id) {
+        if (vistos[id]) return;
+        var ld = locales[id];
+        if (ld.demo) return;
+        if (firmasCount(ld) > 0) { enqueue(ld); docs.push(ld); }
+      });
       if (F() && F().replaceAll) F().replaceAll(docs);
+      flush();
       return { ok: true, docs: docs };
     });
   }
@@ -281,6 +360,7 @@
     HOJAS: [CONTRATOS, FIRMAS], CONTRATOS: CONTRATOS, FIRMAS: FIRMAS,
     tabla: tabla, toCSV: toCSV, toTSV: toTSV, download: download,
     push: push, pull: pull, archivar: archivar, borrar: borrar, correo: correo, post: post,
+    flush: flush, pendientes: pendientes, firmasCount: firmasCount, outbox: outRead,
     permisosRemotos: permisosRemotos, guardarPermiso: guardarPermiso,
     firmaRemota: firmaRemota, guardarFirmaRemota: guardarFirmaRemota,
     token: token, setToken: setToken,
