@@ -326,3 +326,9 @@ html,body{overflow-x:hidden;max-width:100%}
 /* aviso de contrafirma pendiente */
 .sa-badge.pendiente{background:var(--peach-12);color:var(--ink)}
 .sa-badge.pendiente>i{background:var(--peach)}
+
+/* Correo de firma que no salió: atención (peach), no error. */
+.sa-sin-correo{display:block;margin-top:4px;color:var(--attention-text,#B54D36);letter-spacing:.06em}
+.sa-aviso-correo{display:flex;flex-direction:column;gap:6px;padding:14px 16px;border:1px solid var(--attention,#F2755A);background:var(--attention-tint,rgba(242,117,90,.1));border-radius:14px}
+.sa-aviso-correo b{font-weight:600;letter-spacing:.04em;color:var(--attention-text,#B54D36)}
+.sa-aviso-correo span{font-size:12.5px;line-height:1.6;letter-spacing:.03em;color:var(--fg-muted)}

@@ -78,8 +78,12 @@
     ],
     row: function (doc) {
       var fs = doc.firmantes || [];
+      /* Firma única (adelanto): no hay contrafirma que contar ni representante
+         que anotar — si no, la hoja dice "Firmado · 1 de 2" y se lee como
+         un documento atorado. */
+      var solo = !!(F().soloFirmante && F().soloFirmante(doc));
       var ultima = fs.filter(function (f) { return f.firma; }).map(function (f) { return f.firma.ts; })
-        .concat(doc.firmaSpacio ? [doc.firmaSpacio.ts] : []).sort().pop();
+        .concat(!solo && doc.firmaSpacio ? [doc.firmaSpacio.ts] : []).sort().pop();
       var path = drivePath(doc);
       return [
         doc.folio,
@@ -88,9 +92,9 @@
         doc.tipoLabel,
         fs.map(function (f) { return f.nombre; }).join(" · "),
         fs.map(function (f) { return f.email; }).join(" · "),
-        doc.contraparteNombre,
+        solo ? "—" : doc.contraparteNombre,
         estadoLbl(doc),
-        (fs.filter(function (f) { return f.firma; }).length + (doc.firmaSpacio ? 1 : 0)) + " de " + (fs.length + 1),
+        (fs.filter(function (f) { return f.firma; }).length + (!solo && doc.firmaSpacio ? 1 : 0)) + " de " + (fs.length + (solo ? 0 : 1)),
         ultima ? F().fmtDateTime(ultima) : "—",
         doc.certificado || "—",
         doc.estado === "firmado" ? fileName(doc) : "—",
@@ -136,6 +140,7 @@
           guardada ? "Sí" : "No",
         ];
       });
+      if (F().soloFirmante && F().soloFirmante(doc)) return out;
       out.push([
         doc.folio, "Spacio AM", doc.contraparteNombre, doc.contraparteEmail,
         doc.firmaSpacio ? "Firmado" : "Pendiente",
@@ -327,6 +332,7 @@
     if (!destinos) return Promise.resolve({ ok: false, error: "sin_destino" });
     return post({
       action: "enviarCorreo", to: destinos,
+      nota: (extra && extra.mensaje) || doc.mensaje || "",
       asunto: (extra && extra.asunto) || ASUNTOS[id] || ("Spacio AM · " + doc.tipoLabel),
       html: m.html, texto: m.text || "",
       bcc: (extra && extra.bcc) || doc.contraparteEmail || "",

@@ -101,6 +101,7 @@
     ).filter(function (f) { return f && f.nombre && f.email; })
       .map(function (f, i) { return { id: "f" + (i + 1), nombre: f.nombre, email: String(f.email).toLowerCase(), firma: null }; });
     var doc = {
+      soloFirmante: !!SOLO_FIRMANTE[payload.tipo],
       id: "d" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       folio: folio,
       tipo: payload.tipo,
@@ -155,6 +156,17 @@
     });
   }
 
+  /* Documentos que se cierran con la firma del colaborador únicamente:
+     no son un contrato entre dos partes, son una declaración suya que la
+     empresa recibe. Sin esto quedaban atorados en "firmado por 1 parte"
+     esperando una contrafirma que el documento no tiene. */
+  var SOLO_FIRMANTE = { emp_adelanto: 1 };
+  function soloFirmante(d) {
+    if (!d) return false;
+    if (d.soloFirmante != null) return !!d.soloFirmante;
+    return !!SOLO_FIRMANTE[d.tipo];
+  }
+
   /* Firma de un firmante de la otra parte. */
   function signFirmante(id, firmanteId, firma) {
     return update(id, function (d) {
@@ -171,7 +183,7 @@
         : null;
       log(d, "Firmado por " + (nombre || d.firmanteNombre));
       /* Queda cerrado cuando ya firmaron todos, sin importar el orden. */
-      if (faltanFirmas(d) === 0 && d.firmaSpacio) return cerrar(d);
+      if (faltanFirmas(d) === 0 && (soloFirmante(d) || d.firmaSpacio)) return cerrar(d);
       d.estado = "parcial";
       return d;
     });
@@ -186,7 +198,7 @@
     d.estado = "firmado";
     d.certificado = "SAM-FE-" + d.folio.replace("SAM-", "") + "-" +
       hash(d.folio + d.firmanteEmail + ((d.firmantes || [])[0] && (d.firmantes || [])[0].firma ? d.firmantes[0].firma.ts : "")).slice(0, 4);
-    return log(d, "Copia firmada enviada a ambas partes");
+    return log(d, soloFirmante(d) ? "Copia firmada enviada al firmante" : "Copia firmada enviada a ambas partes");
   }
 
   /* Firma por parte de Spacio AM → puede ir antes o después. */
@@ -312,6 +324,7 @@
     onChange: onChange, emit: emit, replaceAll: replaceAll, upsert: upsert,
     ESTADOS: ESTADOS, TIPO_LABEL: TIPO_LABEL, CATEGORIA: CATEGORIA,
     all: all, get: get, create: create, update: update, remove: remove, resend: resend,
+    soloFirmante: soloFirmante, SOLO_FIRMANTE: SOLO_FIRMANTE,
     markVisto: markVisto, signFirmante: signFirmante, signSpacio: signSpacio, faltanFirmas: faltanFirmas,
     cancel: cancel, voidDoc: voidDoc,
     fmtDate: fmtDate, fmtDateTime: fmtDateTime, relative: relative, hash: hash,

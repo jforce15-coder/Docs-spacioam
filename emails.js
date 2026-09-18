@@ -119,7 +119,7 @@
         paras: [
           "Hola " + cap(firstName(d.nombre || "Gabriel")) + ", preparamos tu " + (d.documento || "contrato") + " y lo dejamos listo para tu revisión.",
           "Ábrelo con el botón de abajo: podrás leerlo completo, firmarlo desde tu teléfono o computadora y quedarte con una copia en PDF.",
-        ],
+        ].concat(d.mensaje ? [String(d.mensaje)] : []),
         rows: [
           ["Documento", d.documento || "Contrato de servicios"],
           ["Enviado por", d.remitente || "Spacio AM · Administración"],

@@ -1086,7 +1086,7 @@ function Generator({ onSent }) {
         edits={editsForTipo}
         sugerido={isEmpleado ? data.empNombre : isCohosting ? (isJuridica ? data.repNombre : data.duenoNombre) : data.prestadorNombre}
         onClose={() => setSendOpen(false)}
-        onSent={(doc) => { setSendOpen(false); if (onSent) onSent(doc); else setToast("Enviado a " + doc.firmanteEmail); }}
+        onSent={(doc, res) => { setSendOpen(false); if (onSent) onSent(doc, res); else setToast(res && res.ok === false ? "El correo NO salió para " + (res.fallidos || []).join(", ") + ". Ábrelo en Documentos y usa Reenviar." : "Correo de firma enviado a " + ((res && res.enviados) || []).join(", ")); }}
       />
 
       <DataRequestModal

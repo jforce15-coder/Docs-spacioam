@@ -230,8 +230,9 @@ function DocsTable({ docs, onOpen, lang }) {
             {docs.map((d) => {
               const est = F.ESTADOS[d.estado] || F.ESTADOS.borrador;
               const fs = d.firmantes || [];
-              const total = fs.length + 1;
-              const firmas = fs.filter((f) => f.firma).length + (d.firmaSpacio ? 1 : 0);
+              const solo = F.soloFirmante(d);
+              const total = fs.length + (solo ? 0 : 1);
+              const firmas = fs.filter((f) => f.firma).length + (!solo && d.firmaSpacio ? 1 : 0);
               return (
                 <tr key={d.id} onClick={() => onOpen(d)}>
                   <td className="sa-folio">{d.folio}</td>
@@ -245,7 +246,10 @@ function DocsTable({ docs, onOpen, lang }) {
                   </td>
                   <td className="sa-num">{F.fmtDate(d.enviado)}<span className="sa-td-meta">{F.relative(d.enviado)}</span></td>
                   <td className="sa-num">{firmas} de {total}</td>
-                  <td><span className={"sa-badge " + est.cls}><i />{window.SpacioT.estado(lang, d.estado)}</span></td>
+                  <td>
+                    <span className={"sa-badge " + est.cls}><i />{window.SpacioT.estado(lang, d.estado)}</span>
+                    {d.correoFirma && (d.correoFirma.fallidos || []).length ? <span className="sa-td-meta sa-sin-correo">Correo no entregado</span> : null}
+                  </td>
                 </tr>
               );
             })}
@@ -274,6 +278,12 @@ function DocDetail({ doc, onClose, onChange, onSign, onToast, lang, perms, staff
   const act = (fn, msg) => { const d = fn(); onChange(d); if (d && window.SpacioSync) window.SpacioSync.push("actualizar", d); if (msg) onToast(msg); };
   /* Reenviar/Reactivar tiene que volver a mandar el correo de firma, no solo
      anotarlo en el historial. Mismo enlace, misma plantilla. */
+  /* El envío quedó guardado pero el correo no salió: se avisa arriba del
+     detalle, no enterrado en el historial. */
+  const sinCorreo = doc.correoFirma && (doc.correoFirma.fallidos || []).length ? doc.correoFirma.fallidos : null;
+  /* Los documentos de firma única (adelanto, goce de vacaciones) no llevan
+     contrafirma de Spacio AM: ni se pide ni se cuenta. */
+  const soloFirma = F.soloFirmante(doc);
   const reenviar = () => {
     const d = F.resend(doc.id);
     onChange(d);
@@ -285,6 +295,14 @@ function DocDetail({ doc, onClose, onChange, onSign, onToast, lang, perms, staff
     ]).then(function (r) {
       setBusy("");
       const c = r[1];
+      if (window.Docs && window.Docs.update) {
+        window.Docs.update(d.id, function (dd) {
+          var to = (dd.firmantes || []).map(function (f) { return f.email; });
+          dd.correoFirma = { ts: new Date().toISOString(), enviados: c && c.ok ? to : [], fallidos: c && c.ok ? [] : to, error: (c && (c.error || c.reason)) || "" };
+          return dd;
+        });
+        onChange(window.Docs.get(d.id) || d);
+      }
       onToast(c && c.ok ? "Correo reenviado a " + ((d.firmantes || []).map(function (f) { return f.email; }).join(", ") || d.firmanteEmail) + "."
                         : "Se anotó el reenvío, pero el correo no salió: revisa el Web App en Setup.");
     }).catch(function () { setBusy(""); onToast("Se anotó el reenvío, pero el correo no salió: revisa el Web App en Setup."); });
@@ -299,12 +317,18 @@ function DocDetail({ doc, onClose, onChange, onSign, onToast, lang, perms, staff
             <h2 className="sa-modal-title">{doc.tipoLabel}</h2>
             <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
               <span className={"sa-badge " + est.cls}><i />{window.SpacioT.estado(lang, doc.estado)}</span>
-              {!cerrado && !doc.firmaSpacio && <span className="sa-badge pendiente"><i />Falta la firma de Spacio AM</span>}
+              {!cerrado && !doc.firmaSpacio && !soloFirma && <span className="sa-badge pendiente"><i />Falta la firma de Spacio AM</span>}
             </div>
           </div>
           <button className="sa-x" onClick={onClose} aria-label="Cerrar">×</button>
         </div>
         <div className="sa-modal-body">
+          {sinCorreo && (
+            <div className="sa-aviso-correo">
+              <b>El correo de firma no salió</b>
+              <span>Este documento quedó guardado en el registro, pero el correo no llegó a {sinCorreo.join(", ")}. Usa <b>Reenviar</b> para mandarlo de nuevo con el mismo enlace.</span>
+            </div>
+          )}
           <div className="sa-rows">
             {(doc.firmantes || []).map((f, i) => (
               <div className="sa-row" key={f.id}>
@@ -314,7 +338,7 @@ function DocDetail({ doc, onClose, onChange, onSign, onToast, lang, perms, staff
                 </span>
               </div>
             ))}
-            <div className="sa-row"><span className="sa-row-k">Por Spacio AM</span><span className="sa-row-v">{doc.contraparteNombre}<br />{doc.contraparteEmail}</span></div>
+            {!soloFirma && <div className="sa-row"><span className="sa-row-k">Por Spacio AM</span><span className="sa-row-v">{doc.contraparteNombre}<br />{doc.contraparteEmail}</span></div>}
             <div className="sa-row"><span className="sa-row-k">Enviado</span><span className="sa-row-v">{F.fmtDateTime(doc.enviado)}</span></div>
             {doc.certificado && <div className="sa-row"><span className="sa-row-k">Certificado</span><span className="sa-row-v">{doc.certificado}</span></div>}
             <div className="sa-row"><span className="sa-row-k">Archivo</span><span className="sa-row-v">{window.SpacioSync.fileName(doc)}<br />
@@ -336,7 +360,7 @@ function DocDetail({ doc, onClose, onChange, onSign, onToast, lang, perms, staff
 
           <div className="sa-actions">
             <button className="sa-btn accent" onClick={() => onSign(doc, true)}>Ver documento</button>
-            {puedeFirmarSpacio && !doc.firmaSpacio && !cerrado && (
+            {puedeFirmarSpacio && !doc.firmaSpacio && !cerrado && !soloFirma && (
               <button className="sa-btn accent sa-tip" data-tip="Firma este documento por parte de Spacio AM. Puedes hacerlo antes o después de la otra parte." onClick={() => setFirmaSpacio(true)}>
                 Firmar por Spacio AM
               </button>
@@ -835,7 +859,12 @@ function AdminApp() {
           onNuevo={() => setTab("nuevo")} onToast={setToast} onSign={(d, ro) => setSigning({ doc: d, readOnly: !!ro })} />
       )}
       {tabActual === "nuevo" && (
-        <Generator onSent={(doc) => { setRefreshKey((k) => k + 1); setTab("docs"); setToast("Contrato enviado a " + doc.firmanteEmail + " · " + doc.folio); }} />
+        <Generator onSent={(doc, res) => {
+          setRefreshKey((k) => k + 1); setTab("docs");
+          setToast(res && res.ok === false
+            ? doc.folio + " quedó guardado, pero el correo NO salió para " + (res.fallidos || []).join(", ") + ". Ábrelo y usa Reenviar."
+            : "Contrato enviado a " + ((res && res.enviados) || []).join(", ") + " · " + doc.folio);
+        }} />
       )}
       {tabActual === "correos" && <MailPanel key={refreshKey} lang={lang} />}
       {tabActual === "firma" && <SignPreviewPanel key={refreshKey} lang={lang} onSign={(d) => setSigning({ doc: d })} />}

@@ -224,24 +224,54 @@ function SendModal({ open, tipo, data, custom, edits, sugerido, onClose, onSent 
   const [f1, setF1] = React.useState({ nombre: "", email: "" });
   const [f2, setF2] = React.useState(null);
   const [mensaje, setMensaje] = React.useState("");
-  const [busy, setBusy] = React.useState(false);
-  React.useEffect(() => { if (open) { setF1({ nombre: sugerido || "", email: "" }); setF2(null); setMensaje(""); } }, [open, sugerido]);
+  const [busy, setBusy] = React.useState("");
+  React.useEffect(() => { if (open) { setF1({ nombre: sugerido || "", email: "" }); setF2(null); setMensaje(""); setBusy(""); } }, [open, sugerido]);
   if (!open) return null;
 
   const ok = (f) => f && f.nombre.trim().length > 3 && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(f.email.trim());
   const ready = ok(f1) && (!f2 || ok(f2));
 
-  const send = () => {
-    setBusy(true);
+  /* El correo se manda AQUÍ y se espera su confirmación.
+     Antes esto solo creaba el documento y lo daba por enviado: el registro
+     decía "enviado" y al firmante nunca le llegaba nada. Ahora sale un correo
+     por firmante (cada quien en su propio "Para"), el resultado se guarda en
+     el documento y, si alguno falla, se dice con claridad. */
+  const send = async () => {
+    setBusy("Guardando…");
     const doc = window.Docs.create({
       tipo, data, custom, edits,
       firmantes: [f1].concat(f2 ? [f2] : []).map((f) => ({ nombre: f.nombre.trim(), email: f.email.trim().toLowerCase() })),
       contraparteNombre: data.contratanteNombre,
       mensaje: mensaje.trim(),
     });
-    setBusy(false);
-    if (window.SpacioSync) window.SpacioSync.push("crear", doc);
-    onSent(doc);
+    const S = window.SpacioSync;
+    if (!S) { setBusy(""); onSent(doc, { ok: false, fallidos: (doc.firmantes || []).map((f) => f.email), motivo: "sin_sync" }); return; }
+
+    const sync = await S.push("crear", doc);
+    setBusy("Enviando correo…");
+    const envios = [];
+    for (const f of (doc.firmantes || [])) {
+      let r;
+      try { r = await S.correo("solicitudFirma", doc, { to: f.email, nombre: f.nombre, mensaje: doc.mensaje || "" }); }
+      catch (e) { r = { ok: false, error: String(e) }; }
+      envios.push({ email: f.email, ok: !!(r && r.ok), error: (r && (r.error || r.reason)) || "" });
+    }
+    const enviados = envios.filter((e) => e.ok).map((e) => e.email);
+    const fallidos = envios.filter((e) => !e.ok);
+    const ts = new Date().toISOString();
+    const d = window.Docs.update(doc.id, (dd) => {
+      dd.correoFirma = { ts: ts, enviados: enviados, fallidos: fallidos.map((e) => e.email), error: (fallidos[0] && fallidos[0].error) || "" };
+      dd.historial = (dd.historial || []).concat([{
+        ts: ts,
+        texto: fallidos.length
+          ? "El correo de firma NO salió para " + fallidos.map((e) => e.email).join(", ") + ". Usa Reenviar."
+          : "Correo de firma enviado a " + enviados.join(", ") + ".",
+      }]);
+      return dd;
+    }) || doc;
+    if (fallidos.length) await S.push("actualizar", d);
+    setBusy("");
+    onSent(d, { ok: !fallidos.length, enviados: enviados, fallidos: fallidos.map((e) => e.email), motivo: (fallidos[0] && fallidos[0].error) || "", sync: sync });
   };
 
   const campos = (f, set, n) => (
@@ -275,7 +305,7 @@ function SendModal({ open, tipo, data, custom, edits, sugerido, onClose, onSent 
         </div>
         <div className="sa-modal-body">
           <p style={{ margin: 0, fontSize: 13, lineHeight: 1.7, letterSpacing: ".02em", color: "var(--fg-muted)" }}>
-            {window.Docs.TIPO_LABEL[tipo] || "Documento"} · cada firmante recibe un enlace personal para revisar y firmar. Spacio AM contrafirma al final.
+            {window.Docs.TIPO_LABEL[tipo] || "Documento"} · cada firmante recibe un enlace personal para revisar y firmar. {window.Docs.soloFirmante({ tipo: tipo }) ? "Este documento se cierra con su firma." : "Spacio AM contrafirma al final."}
           </p>
           {campos(f1, setF1, 1)}
           {f2 ? campos(f2, setF2, 2) : (
@@ -290,8 +320,8 @@ function SendModal({ open, tipo, data, custom, edits, sugerido, onClose, onSent 
             El enlace solo funciona con el correo de cada firmante. Al completarse las firmas, todos reciben la copia en PDF con el certificado.
           </div>
           <div className="sa-actions">
-            <button className="sa-btn dark" disabled={!ready || busy} onClick={send} style={{ flex: 1 }}>
-              {busy ? "Enviando…" : "Enviar para firma"}
+            <button className="sa-btn dark" disabled={!ready || !!busy} onClick={send} style={{ flex: 1 }}>
+              {busy || "Enviar para firma"}
             </button>
             <button className="sa-btn ghost" onClick={onClose}>Cancelar</button>
           </div>
@@ -451,10 +481,13 @@ function ScaledCert({ doc, width = 506 }) {
 function CertificadoSheet({ doc }) {
   const F = window.Docs;
   const huella = F.hash(doc.folio + doc.tipo + JSON.stringify(doc.data)).slice(0, 8) + "·" + F.hash(doc.firmanteEmail || "").slice(0, 8);
+  /* En los documentos de firma única el certificado no inventa una parte
+     de Spacio AM que el cuerpo del documento no tiene. */
+  const soloFirma = F.soloFirmante(doc);
   const partes = (doc.firmantes || []).map((f) => ({
     rol: (doc.firmantes.length > 1 ? "Firmante · " + f.id.replace("f", "") : "Firmante"),
     nombre: f.nombre, correo: f.email, firma: f.firma,
-  })).concat([{ rol: "Por Spacio AM, Sociedad Anónima", nombre: doc.contraparteNombre, correo: doc.contraparteEmail, firma: doc.firmaSpacio }]);
+  })).concat(soloFirma ? [] : [{ rol: "Por Spacio AM, Sociedad Anónima", nombre: doc.contraparteNombre, correo: doc.contraparteEmail, firma: doc.firmaSpacio }]);
 
   const metodoLbl = (m) => m === "drawn" ? "firma trazada" : m === "uploaded" ? "imagen de firma" : "firma escrita";
 
@@ -679,7 +712,7 @@ function SignExperience({ doc, onUpdate, onExit, stepOverride, onStepChange, pre
           </h1>
           <p style={{ fontSize: 13.5, lineHeight: 1.7, letterSpacing: ".03em", color: "var(--fg-muted)", margin: 0, textWrap: "pretty" }}>
             {firmadoTodo
-              ? "Enviamos la copia en PDF con el certificado de firma a " + (current.firmantes || []).map((f) => f.email).join(", ") + " y a " + current.contraparteEmail + ". Queda archivada en el Drive de contratos de Spacio AM."
+              ? "Enviamos la copia en PDF con el certificado de firma a " + (current.firmantes || []).map((f) => f.email).join(", ") + (F.soloFirmante(current) ? "" : " y a " + current.contraparteEmail) + ". Queda archivada en el Drive de contratos de Spacio AM."
               : "Cuando todas las partes firmen, la copia en PDF con su certificado llega al correo de cada firmante y queda archivada en el Drive de contratos."}
           </p>
           {syncPend && (
@@ -694,7 +727,7 @@ function SignExperience({ doc, onUpdate, onExit, stepOverride, onStepChange, pre
             <div className="sa-row"><span className="sa-row-k">Certificado</span><span className="sa-row-v">{current.certificado || "—"}</span></div>
             <div className="sa-row"><span className="sa-row-k">Firmas</span><span className="sa-row-v">
               {(current.firmantes || []).map((f) => <span key={f.id}>{f.nombre}: {f.firma ? F.fmtDateTime(f.firma.ts) : "—"}<br /></span>)}
-              {current.contraparteNombre}: {current.firmaSpacio ? F.fmtDateTime(current.firmaSpacio.ts) : "—"}
+              {F.soloFirmante(current) ? null : <span>{current.contraparteNombre}: {current.firmaSpacio ? F.fmtDateTime(current.firmaSpacio.ts) : "—"}</span>}
             </span></div>
           </div>
           <div className="sa-actions" style={{ justifyContent: "center" }}>
