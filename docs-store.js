@@ -32,6 +32,7 @@
     emp_aumento: "Carta de aumento de salario",
     emp_goce: "Constancia de vacaciones",
     emp_bono_estrella: "Bono Estrella",
+    emp_adelanto: "Solicitud y recibo de adelanto de pago",
   };
 
   var CATEGORIA = function (tipo) {

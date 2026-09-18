@@ -62,6 +62,11 @@ const EMPLEADO_DEFAULTS = {
   vacPeriodoInicio: "",
   vacPeriodoFin: "",
   empRol: "Happiness Hero",
+  adelMonto: "",
+  adelFechaDeposito: "",
+  adelCuotas: "",
+  adelPeriodicidad: "Quincenal",
+  adelCuotaMonto: "",
 };
 
 /* Local-storage key */
@@ -200,6 +205,7 @@ const TIPO_OPCIONES = [
   { value: "emp_aumento", label: "Aumento de salario", sub: "Empleados" },
   { value: "emp_goce", label: "Constancia de vacaciones", sub: "Empleados" },
   { value: "emp_bono_estrella", label: "Bono Estrella", sub: "Empleados" },
+  { value: "emp_adelanto", label: "Adelanto de pago", sub: "Empleados" },
 ];
 
 function SectionsEditor({ edits }) {
@@ -511,6 +517,7 @@ function Generator({ onSent }) {
       : tipo === "emp_aumento" ? "Carta de Aumento"
       : tipo === "emp_goce" ? "Constancia de Vacaciones"
       : tipo === "emp_bono_estrella" ? "Bono Estrella"
+      : tipo === "emp_adelanto" ? "Adelanto de Pago"
       : "Personalizado";
     const sourceName = isEmpleado
       ? data.empNombre
@@ -905,6 +912,28 @@ function Generator({ onSent }) {
           {tipo === "emp_bono_estrella" && (
             <div className="field"><label>Rol / puesto evaluado</label>
               <input value={data.empRol} placeholder="Happiness Hero" onChange={(e) => set("empRol", e.target.value)} /></div>
+          )}
+          {tipo === "emp_adelanto" && (
+            <>
+              <div className="field-row">
+                <div className="field"><label>Monto total solicitado (Q)</label>
+                  <input value={data.adelMonto} placeholder="7,691.50" onChange={(e) => set("adelMonto", e.target.value)} /></div>
+                <div className="field"><label>Fecha del depósito</label>
+                  <input type="date" value={data.adelFechaDeposito} onChange={(e) => set("adelFechaDeposito", e.target.value)} /></div>
+              </div>
+              <div className="field-row">
+                <div className="field"><label>Número de cuotas</label>
+                  <input value={data.adelCuotas} placeholder="21" onChange={(e) => set("adelCuotas", e.target.value)} /></div>
+                <div className="field"><label>Periodicidad</label>
+                  <PanelSeg size="sm" value={data.adelPeriodicidad} onChange={(v) => set("adelPeriodicidad", v)}
+                    options={[{ value: "Quincenal", label: "Quincenal" }, { value: "Mensual", label: "Mensual" }]} /></div>
+              </div>
+              <div className="field">
+                <label>Monto por cuota (Q)</label>
+                <input value={data.adelCuotaMonto} placeholder="se calcula solo" onChange={(e) => set("adelCuotaMonto", e.target.value)} />
+                <div className="footnote">Si lo dejas vacío se calcula dividiendo el monto total entre el número de cuotas.</div>
+              </div>
+            </>
           )}
         </div>
 

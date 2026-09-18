@@ -7,6 +7,7 @@
      • aumento       → Carta de aumento de salario
      • goce          → Constancia de goce de vacaciones
      • bono_estrella → Términos y condiciones · Programa Soy Estrella
+     • adelanto      → Solicitud y recibo de adelanto de pago
    ============================================================ */
 
 /* Inline markup helpers (parseRich understands **bold** and ⟦ph⟧) */
@@ -221,6 +222,109 @@ function buildBonoEstrella(d) {
   };
 }
 
+
+/* ─── 6 · Solicitud y recibo de adelanto de pago ───────── */
+const EMP_UNI = ["", "un", "dos", "tres", "cuatro", "cinco", "seis", "siete", "ocho", "nueve", "diez", "once", "doce", "trece", "catorce", "quince", "dieciséis", "diecisiete", "dieciocho", "diecinueve", "veinte", "veintiuno", "veintidós", "veintitrés", "veinticuatro", "veinticinco", "veintiséis", "veintisiete", "veintiocho", "veintinueve"];
+const EMP_DEC = ["", "", "veinte", "treinta", "cuarenta", "cincuenta", "sesenta", "setenta", "ochenta", "noventa"];
+const EMP_CEN = ["", "ciento", "doscientos", "trescientos", "cuatrocientos", "quinientos", "seiscientos", "setecientos", "ochocientos", "novecientos"];
+/* Apócope: "uno"→"un", "veintiuno"→"veintiún" cuando precede sustantivo o "mil" */
+function empApocope(s) {
+  return s.replace(/veintiuno$/, "veintiún").replace(/(^|\s|y )uno$/, "$1un");
+}
+function empCientos(n, apoc) {
+  if (n === 0) return "";
+  if (n === 100) return "cien";
+  const c = Math.floor(n / 100), r = n % 100;
+  let out = EMP_CEN[c];
+  if (r) {
+    let rr = r < 30 ? EMP_UNI[r] : EMP_DEC[Math.floor(r / 10)] + (r % 10 ? " y " + EMP_UNI[r % 10] : "");
+    if (r < 30 && r === 1) rr = "uno";
+    if (r % 10 === 1 && r > 30) rr = EMP_DEC[Math.floor(r / 10)] + " y uno";
+    if (apoc) rr = empApocope(rr);
+    out = out ? out + " " + rr : rr;
+  }
+  return out;
+}
+/* apoc = el número precede a un sustantivo (quetzales, centavos) o a "mil" */
+function empNumLetras(n, apoc) {
+  n = Math.floor(Math.abs(n));
+  if (n === 0) return "cero";
+  const mill = Math.floor(n / 1000000), mil = Math.floor((n % 1000000) / 1000), res = n % 1000;
+  const partes = [];
+  if (mill) partes.push(mill === 1 ? "un millón" : empCientos(mill, true) + " millones");
+  if (mil) partes.push(mil === 1 ? "mil" : empCientos(mil, true) + " mil");
+  if (res) partes.push(empCientos(res, apoc !== false));
+  return partes.join(" ");
+}
+function empMontoLetras(v) {
+  const num = parseFloat(String(v == null ? "" : v).replace(/[^\d.]/g, ""));
+  if (!isFinite(num) || num <= 0) return null;
+  const ent = Math.floor(num), cent = Math.round((num - ent) * 100);
+  /* "un millón de quetzales": el "de" solo cuando el millón no lleva cifra menor */
+  const soloMillones = ent >= 1000000 && ent % 1000000 === 0;
+  const moneda = ent === 1 ? "un quetzal"
+    : empNumLetras(ent, true) + (soloMillones ? " de quetzales" : " quetzales");
+  const cola = cent
+    ? (cent === 1 ? " con un centavo" : " con " + empNumLetras(cent, true) + " centavos")
+    : (ent === 1 ? " exacto" : " exactos");
+  const letras = moneda + cola;
+  return letras.charAt(0).toUpperCase() + letras.slice(1);
+}
+function empMoneda(v) {
+  const num = parseFloat(String(v == null ? "" : v).replace(/[^\d.]/g, ""));
+  if (!isFinite(num)) return null;
+  return num.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function empFechaCorta(iso) {
+  if (!iso) return null;
+  const p = String(iso).split("-");
+  if (p.length !== 3) return null;
+  return p[2] + "/" + p[1] + "/" + p[0];
+}
+
+function buildAdelanto(d) {
+  const montoNum = empMoneda(d.adelMonto);
+  const letras = empMontoLetras(d.adelMonto);
+  const montoTxt = montoNum
+    ? `**Q. ${montoNum}**${letras ? ` (${letras.toLowerCase()})` : ""}`
+    : "⟦monto total⟧";
+  const cuotas = parseInt(String(d.adelCuotas || "").replace(/[^\d]/g, ""), 10);
+  const mensual = d.adelPeriodicidad === "Mensual";
+  const rawNum = parseFloat(String(d.adelMonto || "").replace(/[^\d.]/g, ""));
+  const cuotaAuto = (isFinite(rawNum) && cuotas > 0) ? (rawNum / cuotas) : null;
+  const cuotaTxt = empMoneda(d.adelCuotaMonto) || (cuotaAuto != null ? empMoneda(cuotaAuto.toFixed(2)) : null);
+  const unidad = mensual ? "mes" : "quincena";
+  const dias = mensual ? "el día 30 de cada mes" : "los días 15 y 30";
+  const periodicidad = cuotaTxt
+    ? `${mensual ? "Mensual" : "Quincenal"} (Q${cuotaTxt} por ${unidad}, ${dias})`
+    : `${mensual ? "Mensual" : "Quincenal"} (⟦monto por ${unidad}⟧, ${dias})`;
+  const comprobante = mensual ? "comprobante de nómina mensual" : "comprobante de quincena";
+
+  return {
+    title: "Solicitud y recibo de adelanto de pago",
+    body: [
+      { t: "p", text: `Guatemala, ${formatLongDateCap(d.fecha)}.` },
+      { t: "p", text: `Por este medio, yo, ${empBph(d.empNombre, "NOMBRE DEL COLABORADOR")}, quien se identifica con el Documento Personal de Identificación número ${empBph(d.empDPI, "DPI")} extendido por el Registro Nacional de las Personas de la República de Guatemala, quien actúa en su calidad de PERSONA INDIVIDUAL y quien es colaborador en relación de dependencia de Spacio AM, solicito y acepto un adelanto de pago conforme a las condiciones detalladas a continuación.` },
+      { t: "ol", items: [
+        `${empB("Monto total solicitado:")} ${montoTxt}`,
+        `${empB("Fecha del depósito:")} ${empPh(empFechaCorta(d.adelFechaDeposito), "fecha del depósito")}`,
+        `${empB("Número de cuotas:")} ${empPh(cuotas > 0 ? cuotas : "", "número de cuotas")}`,
+        `${empB("Periodicidad del descuento:")} ${periodicidad}`,
+        `${empB("Modalidad:")} descuento automático en cada ${comprobante}.`,
+      ]},
+      { t: "p", text: `Este adelanto será descontado de mi salario en los comprobantes de ${mensual ? "nómina" : "quincena"} correspondientes o, en su defecto, del monto total de mi liquidación al finalizar la relación laboral. Autorizo expresamente a Spacio AM a realizar dicho descuento sin necesidad de autorización adicional.` },
+      { t: "p", text: `Declaro haber recibido el monto indicado y me comprometo a devolverlo en su totalidad bajo las condiciones acordadas, incluso en caso de terminación anticipada de mi relación con Spacio AM. En dicho caso, acepto que el saldo pendiente podrá descontarse de cualquier pago pendiente.` },
+      { t: "p", text: `Reconozco que este adelanto no constituye un derecho adquirido ni recurrente, y que es una excepción otorgada de buena fe por la empresa.` },
+    ],
+    signatures: {
+      date: "",
+      parties: [
+        { name: empPh(d.empNombre, "NOMBRE DEL COLABORADOR"), role: "Colaborador(a)" },
+      ],
+    },
+  };
+}
+
 /* ─── Builder registry + component wrappers ────────────── */
 const EMPLEADO_BUILDERS = {
   emp_promocion: buildPromocion,
@@ -228,6 +332,7 @@ const EMPLEADO_BUILDERS = {
   emp_aumento: buildAumento,
   emp_goce: buildGoce,
   emp_bono_estrella: buildBonoEstrella,
+  emp_adelanto: buildAdelanto,
 };
 
 function ContratoEmpleado({ tipo, data, edits, onEdit, onReset }) {
@@ -246,5 +351,5 @@ function ContratoEmpleado({ tipo, data, edits, onEdit, onReset }) {
 Object.assign(window, {
   ContratoEmpleado,
   EMPLEADO_BUILDERS,
-  buildPromocion, buildContratacion, buildAumento, buildGoce, buildBonoEstrella,
+  buildPromocion, buildContratacion, buildAumento, buildGoce, buildBonoEstrella, buildAdelanto,
 });
