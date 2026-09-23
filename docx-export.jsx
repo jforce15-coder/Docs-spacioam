@@ -627,7 +627,8 @@ function blocksToParas(blocks) {
   const out = [];
   (blocks || []).forEach((bl) => {
     if (bl.t === "ul" || bl.t === "ol") (bl.items || []).forEach((it) => out.push(paraBullet(it)));
-    else out.push(paraText(bl.text || ""));
+    else if (bl.t === "sp") out.push(paraText(""));
+    else String(bl.text || "").split("\n").forEach((l) => out.push(paraText(l)));
   });
   return out;
 }

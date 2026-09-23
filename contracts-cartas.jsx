@@ -12,9 +12,9 @@ const CARTA_DEFAULTS = {
   cartaAtencion: "Administración\nCondominio Serena de Arrazola",
   cartaSaludo: "Estimados señores:",
   cartaCuerpo: [
-    "Por medio de la presente, nosotros en Spacio AM extendemos esta carta de recomendación a favor del señor Juan Pablo Cortés Soto, de nacionalidad chilena y con pasaporte número F56188393, quien ocupó una de nuestras propiedades ubicada en Andares, zona 12.",
-    "Durante todo el tiempo que estuvo con nosotros, se desempeñó como un excelente inquilino. Mantuvo la propiedad en muy buen estado, fue respetuoso con las normas de convivencia y con las áreas comunes, y en todo momento demostró responsabilidad, orden y una comunicación cordial.",
-    "No dudamos en recomendarlo como un inquilino ejemplar, y confiamos en que será un excelente aporte para su comunidad.",
+    "Por medio de la presente, nosotros en Spacio AM extendemos esta carta de recomendación a favor del señor **Juan Pablo Cortés Soto**, de nacionalidad **chilena** y con pasaporte número **F56188393**, quien ocupó una de nuestras propiedades ubicada en **Andares, zona 12**.",
+    "Durante todo el tiempo que estuvo con nosotros, se desempeñó como un **excelente inquilino**. Mantuvo la propiedad en muy buen estado, fue respetuoso con las normas de convivencia y con las áreas comunes, y en todo momento demostró responsabilidad, orden y una comunicación cordial.",
+    "No dudamos en recomendarlo como un **inquilino ejemplar**, y confiamos en que será un excelente aporte para su comunidad.",
     "Quedamos a su entera disposición para ampliar cualquier información que consideren necesaria.",
   ].join("\n\n"),
   cartaDespedida: "Atentamente,",
@@ -26,11 +26,13 @@ const CARTA_DEFAULTS = {
 
 const cartaPh = (v, p) => (v === undefined || v === null || String(v).trim() === "") ? `⟦${p}⟧` : String(v);
 const cartaLines = (s) => String(s || "").split(/\n/).map((l) => l.trim()).filter(Boolean);
-const cartaParas = (s) => String(s || "").split(/\n\s*\n/).map((l) => l.trim()).filter(Boolean);
+/* Párrafos del cuerpo: una línea en blanco los separa; cada línea en blanco
+   adicional es un espacio extra; un salto sencillo se respeta. */
+const cartaBody = (s) => (window.parseRaw ? window.parseRaw(s) : String(s || "").split(/\n\s*\n/).filter(Boolean).map((t) => ({ t: "p", text: t.trim() })));
 
 function buildCarta(d) {
   const atencion = cartaLines(d.cartaAtencion);
-  const cuerpo = cartaParas(d.cartaCuerpo);
+  const cuerpo = cartaBody(d.cartaCuerpo);
   const extra = [
     d.cartaFirmaTel ? "Teléfono: " + d.cartaFirmaTel : "",
     d.cartaFirmaCorreo ? "Correo: " + d.cartaFirmaCorreo : "",
@@ -39,10 +41,9 @@ function buildCarta(d) {
     title: cartaPh(d.cartaTitulo, "Título de la carta"),
     body: [
       { t: "p", text: `Guatemala, ${d.fecha ? formatLongDate(d.fecha) : "⟦fecha⟧"}.` },
-      { t: "p", text: `A la atención de:${atencion.length ? "" : " ⟦destinatario⟧"}` },
-      ...atencion.map((l) => ({ t: "p", text: l })),
+      { t: "p", text: "**A la atención de:**\n" + (atencion.length ? atencion.map((l) => "**" + l + "**").join("\n") : "⟦destinatario⟧") },
       { t: "p", text: cartaPh(d.cartaSaludo, "saludo") },
-      ...(cuerpo.length ? cuerpo : ["⟦cuerpo de la carta⟧"]).map((p) => ({ t: "p", text: p })),
+      ...(cuerpo.length ? cuerpo : [{ t: "p", text: "⟦cuerpo de la carta⟧" }]),
       { t: "p", text: cartaPh(d.cartaDespedida, "despedida") },
     ],
     signatures: {

@@ -802,7 +802,9 @@ details[open] summary { color: var(--ink); }
 .blk-sig .s-line {
   border-top: 1px solid var(--ink);
   padding-top: 6px;
-  max-width: 300px;
+  width: max-content;
+  min-width: 300px;
+  max-width: 100%;
 }
 /* espacio reservado para la firma: siempre presente (mide igual con o sin firma) */
 .blk-sig .s-ink {
@@ -826,6 +828,8 @@ details[open] summary { color: var(--ink); }
   font-family: var(--sans);
   font-weight: 600;
   font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
   letter-spacing: var(--tr-wide);
   text-transform: uppercase;
 }
@@ -1070,3 +1074,8 @@ details[open] summary { color: var(--ink); }
 
 /* Cartas: datos de contacto bajo el cargo del firmante */
 .blk-sig .s-extra { font-family: var(--sans); font-weight: 500; font-size: 13px; letter-spacing: 0.04em; color: var(--ink); line-height: 1.6; }
+
+/* Cartas: fecha a la derecha, con aire entre el título y la fecha */
+.blk-date { text-align: right !important; padding: 26px 0 22px 0 !important; }
+/* Línea en blanco adicional del editor = un renglón de espacio en la hoja */
+.blk-sp { height: 24px; position: relative; }

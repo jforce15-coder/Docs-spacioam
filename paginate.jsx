@@ -30,6 +30,14 @@ const MEMBRETE = "assets/letterhead-cover.jpeg";
    cases must render the ⟦…⟧ in peach. */
 function parseRich(text) {
   if (text == null) return null;
+  /* Un salto de línea sencillo en el editor es un salto de línea en la hoja. */
+  if (String(text).indexOf("\n") > -1) {
+    const lines = String(text).split("\n");
+    return lines.map((l, i) => <React.Fragment key={"l" + i}>{i > 0 ? <br /> : null}{parseRichLine(l)}</React.Fragment>);
+  }
+  return parseRichLine(text);
+}
+function parseRichLine(text) {
   const parts = String(text).split(/(\*\*[^*]+\*\*|⟦[^⟧]+⟧)/g);
   return parts.map((p, i) => {
     if (p.startsWith("**") && p.endsWith("**")) {
@@ -52,25 +60,45 @@ function parseRich(text) {
 }
 
 /* ─── Serialize a clause's blocks into editable raw text ── */
+/* Cada bloque "sp" (espacio extra) se guarda como una línea en blanco más. */
 function serializeBlocks(blocks) {
-  return (blocks || []).map((b) => {
-    if (b.t === "ol") return b.items.map((it, i) => `${i + 1}. ${it}`).join("\n");
-    if (b.t === "ul") return b.items.map((it) => `- ${it}`).join("\n");
-    return b.text || "";
-  }).join("\n\n");
+  let out = "";
+  (blocks || []).forEach((b) => {
+    if (b.t === "sp") { out += "\n"; return; }
+    const txt = b.t === "ol" ? b.items.map((it, i) => `${i + 1}. ${it}`).join("\n")
+      : b.t === "ul" ? b.items.map((it) => `- ${it}`).join("\n")
+      : (b.text || "");
+    out += (out ? "\n\n" : "") + txt;
+  });
+  return out;
 }
 
 /* ─── Parse edited raw text back into structured blocks ─── */
+/* Una línea en blanco separa párrafos; cada línea en blanco ADICIONAL
+   agrega un espacio en la hoja. Un salto sencillo se respeta como salto. */
 function parseRaw(raw) {
-  const chunks = String(raw || "").split(/\n{2,}/).map((c) => c.trim()).filter(Boolean);
-  return chunks.map((chunk) => {
-    const lines = chunk.split(/\n/).map((l) => l.trim()).filter(Boolean);
-    const allUl = lines.length > 0 && lines.every((l) => /^[-–•]\s+/.test(l));
-    const allOl = lines.length > 0 && lines.every((l) => /^\d+[.)]\s+/.test(l));
-    if (allUl) return { t: "ul", items: lines.map((l) => l.replace(/^[-–•]\s+/, "")) };
-    if (allOl) return { t: "ol", items: lines.map((l) => l.replace(/^\d+[.)]\s+/, "")) };
-    return { t: "p", text: lines.join(" ") };
+  const lines = String(raw || "").replace(/\r/g, "").split("\n");
+  const out = [];
+  let chunk = [], empties = 0;
+  const pushChunk = () => {
+    if (!chunk.length) return;
+    const ls = chunk.map((l) => l.trim());
+    if (ls.every((l) => /^[-–•]\s+/.test(l))) out.push({ t: "ul", items: ls.map((l) => l.replace(/^[-–•]\s+/, "")) });
+    else if (ls.every((l) => /^\d+[.)]\s+/.test(l))) out.push({ t: "ol", items: ls.map((l) => l.replace(/^\d+[.)]\s+/, "")) });
+    else out.push({ t: "p", text: ls.join("\n") });
+    chunk = [];
+  };
+  lines.forEach((l) => {
+    if (!l.trim()) { empties++; return; }
+    if (empties > 0) {
+      pushChunk();
+      if (out.length) for (let i = 1; i < empties; i++) out.push({ t: "sp" });
+      empties = 0;
+    }
+    chunk.push(l);
   });
+  pushChunk();
+  return out;
 }
 
 /* ─── Apply the edits map onto a contract (immutable copy) ─ */
@@ -98,7 +126,10 @@ function flattenContract(contract) {
     let firstBody = true;
     contract.body.forEach((bl) => {
       const meta = firstBody ? { editKey: "cuerpo", editTitle: "Cuerpo de la carta", showEdit: true } : {};
-      if (bl.t === "p") blocks.push({ k: "p", text: bl.text, ...meta });
+      /* La fecha de una carta ("Guatemala, …") va a la derecha, separada del título. */
+      if (bl.t === "p" && firstBody && /^Guatemala,/.test(String(bl.text || "").trim())) blocks.push({ k: "date", text: bl.text, ...meta });
+      else if (bl.t === "sp") blocks.push({ k: "sp", ...meta });
+      else if (bl.t === "p") blocks.push({ k: "p", text: bl.text, ...meta });
       else if (bl.t === "ol")
         bl.items.forEach((it, i) =>
           blocks.push({ k: "li", mk: (i + 1) + ".", text: it, ...(i === 0 ? meta : {}) }));
@@ -112,6 +143,7 @@ function flattenContract(contract) {
     blocks.push({ k: "head", ord: c.ord, label: c.label, editKey: c.ord, editTitle: `${c.ord}. ${c.label || ""}`.trim(), showEdit: true });
     (c.blocks || []).forEach((bl) => {
       if (bl.t === "p") blocks.push({ k: "p", text: bl.text });
+      else if (bl.t === "sp") blocks.push({ k: "sp" });
       else if (bl.t === "ol")
         (bl.items || []).forEach((it, i) =>
           blocks.push({ k: "li", mk: String.fromCharCode(97 + i) + ")", text: it }));
@@ -168,6 +200,19 @@ function buildSigRows(parties, firmas) {
   return base;
 }
 
+/* ─── Nombre del firmante: siempre en UNA línea ───────────
+   Si no cabe en la columna, reduce el tamaño hasta que quepa. */
+function SigName({ children }) {
+  const ref = React.useRef(null);
+  React.useLayoutEffect(() => {
+    const el = ref.current; if (!el) return;
+    el.style.fontSize = "";
+    let fs = 15;
+    while (el.scrollWidth > el.clientWidth + 1 && fs > 10) { fs -= 0.5; el.style.fontSize = fs + "px"; }
+  });
+  return <div className="s-name" ref={ref}>{children}</div>;
+}
+
 /* ─── Render a single block ────────────────────────────── */
 function Block({ b, editable, onEdit }) {
   if (!b) return null;
@@ -190,6 +235,10 @@ function Block({ b, editable, onEdit }) {
     return <p className="blk-intro">{pencil}{parseRich(b.text)}</p>;
   if (b.k === "p")
     return <p className="blk-p">{pencil}{parseRich(b.text)}</p>;
+  if (b.k === "date")
+    return <p className="blk-p blk-date">{pencil}{parseRich(b.text)}</p>;
+  if (b.k === "sp")
+    return <div className="blk-sp" aria-hidden="true">{pencil}</div>;
   if (b.k === "head")
     return (
       <p className="blk-head">
@@ -218,7 +267,7 @@ function Block({ b, editable, onEdit }) {
             <div className="s-line" key={i}>
               <div className="s-ink">{p.img ? <img src={p.img} alt="" /> : null}</div>
               <div className="s-rule" />
-              <div className="s-name">{parseRich(p.name)}</div>
+              <SigName>{parseRich(p.name)}</SigName>
               <div className="s-role">{p.role}</div>
               {(p.extra || []).map((l, j) => <div className="s-extra" key={j}>{l}</div>)}
             </div>

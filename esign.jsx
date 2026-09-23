@@ -30,7 +30,9 @@ function typedSignatureImage(nombre) {
    impresa, así que en el PDF se ve igual de nítida) y la transparencia se
    reduce a 4 niveles. Resultado: ≈6–10 K caracteres por firma.
    El certificado no depende de la imagen, así que compactar no lo altera. */
-const FIRMA_MAX_W = 480, FIRMA_MAX_H = 160;
+/* 900×300 y transparencia continua: la firma se ve nítida en el PDF.
+   (Antes: 480×160 y 4 niveles de transparencia → trazo pixeleado.) */
+const FIRMA_MAX_W = 900, FIRMA_MAX_H = 300;
 function compactSignature(dataURL) {
   return new Promise((resolve) => {
     if (!dataURL || String(dataURL).indexOf("data:image") !== 0) { resolve(dataURL); return; }
@@ -66,7 +68,7 @@ function compactSignature(dataURL) {
         for (let i = 0; i < p.length; i += 4) {
           const a = p[i + 3];
           p[i] = 62; p[i + 1] = 63; p[i + 2] = 63;
-          p[i + 3] = a < 24 ? 0 : a < 96 ? 85 : a < 176 ? 170 : 255;
+          p[i + 3] = a < 10 ? 0 : a;
         }
         octx.putImageData(px, 0, 0);
         const res = out.toDataURL("image/png");
@@ -80,7 +82,7 @@ function compactSignature(dataURL) {
 /* Firmas de un documento que todavía están en el formato pesado.
    Un documento ya compactado lleva la marca firmasCompactas y no se vuelve
    a procesar, aunque su firma siga midiendo más que el umbral. */
-const FIRMA_PESADA = 12000;
+const FIRMA_PESADA = 60000;
 function docTieneFirmasPesadas(doc) {
   if (!doc || doc.firmasCompactas) return false;
   const imgs = (doc.firmantes || []).map((f) => f.firma && f.firma.img).concat([doc.firmaSpacio && doc.firmaSpacio.img]);
@@ -644,7 +646,7 @@ async function downloadSignedPdf(doc, onStatus) {
         <FirmasCtx.Provider value={firmasDe(doc)}>
           <ContractDoc tipo={doc.tipo} data={doc.data} custom={doc.custom} edits={doc.edits} />
         </FirmasCtx.Provider>
-        {window.Docs.soloSpacio && window.Docs.soloSpacio(doc) ? null : <CertificadoSheet doc={doc} />}
+        <CertificadoSheet doc={doc} />
       </div>
     );
     await new Promise((r) => setTimeout(r, 700));
@@ -659,7 +661,7 @@ async function downloadSignedPdf(doc, onStatus) {
     for (let i = 0; i < sheets.length; i++) {
       say(`Página ${i + 1} de ${sheets.length}…`);
       const canvas = await window.html2canvas(sheets[i], {
-        scale: 2, useCORS: true, backgroundColor: "#E8E4DC", width: PAGE_W, height: PAGE_H, windowWidth: PAGE_W,
+        scale: 3, useCORS: true, backgroundColor: "#E8E4DC", width: PAGE_W, height: PAGE_H, windowWidth: PAGE_W,
       });
       if (i > 0) pdf.addPage([PAGE_W, PAGE_H], "portrait");
       pdf.addImage(canvas.toDataURL("image/jpeg", 0.95), "JPEG", 0, 0, PAGE_W, PAGE_H, undefined, "FAST");
