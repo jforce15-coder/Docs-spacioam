@@ -4,7 +4,8 @@ Sube estos 11 archivos a la raíz del repo (reemplazan los actuales). No requier
 
 ## Qué hace
 - Nuevo tipo **Carta** en el generador (categoría "Cartas").
-- Machote: título (es el asunto, el nombre en Documentos y el del PDF), fecha, "A la atención de", saludo, cuerpo, despedida y firma.
+- Misma estructura que la carta de promoción: título en Valky arriba, texto y firma al final.
+- Machote: título (va arriba y es el nombre en Documentos y del PDF), fecha, "A la atención de", saludo, cuerpo, despedida y firma.
 - Viene precargada con la carta de recomendación de Juan Pablo Cortés Soto para Condominio Serena de Arrazola.
 - El cuerpo también se edita directo sobre la hoja (lápiz).
 - **Firmar carta**: firma solo Spacio AM (firma guardada, dibujada, subida o escrita). Queda registrada en Documentos como Firmada y se descarga el PDF en membrete, sin hoja de certificado.

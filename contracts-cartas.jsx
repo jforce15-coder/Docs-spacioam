@@ -1,8 +1,9 @@
 /* ============================================================
    SPACIO AM — Cartas
    Machote de carta formal en membrete, firmada SOLO por Spacio AM.
-   Campos: título (también es el asunto y el nombre del documento),
-   fecha, destinatario, saludo, cuerpo, despedida y firmante.
+   Misma estructura que la carta de promoción: título en serif arriba,
+   fecha, destinatario, saludo, cuerpo, despedida y la firma al final.
+   El título también es el nombre del documento y del PDF.
    El cuerpo completo se puede editar sobre la hoja (lápiz).
    ============================================================ */
 
@@ -35,12 +36,11 @@ function buildCarta(d) {
     d.cartaFirmaCorreo ? "Correo: " + d.cartaFirmaCorreo : "",
   ].filter(Boolean);
   return {
-    title: "",
+    title: cartaPh(d.cartaTitulo, "Título de la carta"),
     body: [
-      { t: "p", text: `Guatemala, ${d.fecha ? formatLongDate(d.fecha) : "⟦fecha⟧"}` },
+      { t: "p", text: `Guatemala, ${d.fecha ? formatLongDate(d.fecha) : "⟦fecha⟧"}.` },
       { t: "p", text: `A la atención de:${atencion.length ? "" : " ⟦destinatario⟧"}` },
       ...atencion.map((l) => ({ t: "p", text: l })),
-      { t: "p", text: `**Asunto:** ${cartaPh(d.cartaTitulo, "asunto")}` },
       { t: "p", text: cartaPh(d.cartaSaludo, "saludo") },
       ...(cuerpo.length ? cuerpo : ["⟦cuerpo de la carta⟧"]).map((p) => ({ t: "p", text: p })),
       { t: "p", text: cartaPh(d.cartaDespedida, "despedida") },

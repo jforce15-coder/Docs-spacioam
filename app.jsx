@@ -698,7 +698,7 @@ function Generator({ onSent, base }) {
           <div className="field">
             <label>Título de la carta</label>
             <input value={data.cartaTitulo} maxLength={120} placeholder="Carta de recomendación" onChange={(e) => set("cartaTitulo", e.target.value)} />
-            <div className="footnote">Es el asunto, el nombre en Documentos y el nombre del PDF.</div>
+            <div className="footnote">Va arriba de la carta y es su nombre en Documentos y en el PDF.</div>
           </div>
           <div className="field">
             <label>Fecha</label>
