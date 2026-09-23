@@ -727,13 +727,61 @@ function AdminApp() {
      generados en las dos apps (Grow y Docs), y se vuelve a traer cada vez
      que la pestaña recupera el foco. Sin esto, el panel solo veía lo que
      este navegador había creado. */
+  /* Enlace de firma: solo se trae ESE documento, con límite de tiempo y
+     reintento visible. Nunca se descarga el registro completo en el
+     teléfono del firmante. */
+  const [cargaFirma, setCargaFirma] = useS({ estado: "cargando", intento: 0 });
   useE(() => {
+    if (!firmarId) return;
+    const S = window.SpacioSync;
+    if (!S || !S.endpoint()) { setSincronizado(true); return; }
+    let vivo = true;
+    setCargaFirma((c) => Object.assign({}, c, { estado: "cargando", lento: false }));
+    const lento = setTimeout(() => { if (vivo) setCargaFirma((c) => Object.assign({}, c, { lento: true })); }, 8000);
+    S.getDoc(firmarId).then((r) => {
+      if (!vivo) return;
+      clearTimeout(lento);
+      if (r.ok) { setCargaFirma((c) => Object.assign({}, c, { estado: "listo" })); setSincronizado(true); setPublicKey((k) => k + 1); return; }
+      if (r.noExiste) { setCargaFirma((c) => Object.assign({}, c, { estado: "listo" })); setSincronizado(true); return; }
+      /* No hubo respuesta: se dice, con opción de reintentar. Si ya hay copia
+         local, se usa. */
+      if (window.Docs.get(firmarId)) { setCargaFirma((c) => Object.assign({}, c, { estado: "listo" })); setSincronizado(true); return; }
+      setCargaFirma((c) => Object.assign({}, c, { estado: "error", error: r.error }));
+    });
+    /* La firma que quedó en la bandeja de salida de este teléfono se sube
+       en segundo plano, sin bloquear la pantalla. */
+    S.flush().catch(() => {});
+    return () => { vivo = false; clearTimeout(lento); };
+  }, [firmarId, cargaFirma.intento]);
+
+  useE(() => {
+    if (firmarId) return;
     const S = window.SpacioSync;
     if (!S || !S.endpoint()) { setSincronizado(true); return; }
     let vivo = true;
     const traer = () => S.flush().then(() => S.pull())
-      .then(() => { if (!vivo) return; setSincronizado(true); setRefreshKey((k) => k + 1); setPublicKey((k) => k + 1); })
+      .then(() => { if (!vivo) return; setSincronizado(true); setRefreshKey((k) => k + 1); setPublicKey((k) => k + 1); aligerar(); })
       .catch(() => { if (vivo) setSincronizado(true); });
+    /* Documentos firmados antes de la compactación: se aligeran una sola
+       vez, uno por uno, y se vuelven a escribir con verificación. La próxima
+       vez que alguien abra su enlace ya llega el documento liviano. */
+    let aligerando = false;
+    const aligerar = async () => {
+      if (aligerando || !window.docTieneFirmasPesadas) return;
+      aligerando = true;
+      const pesados = (window.Docs.all() || []).filter((d) => !d.demo && window.docTieneFirmasPesadas(d));
+      for (const d of pesados) {
+        if (!vivo) break;
+        try {
+          const liv = await window.compactDocSignatures(d);
+          /* Éxito = el documento se redujo, no un umbral absoluto. Se guarda
+             con la marca en ambos casos para no reprocesarlo cada vez. */
+          const guardado = window.Docs.upsert(liv) || liv;
+          if (JSON.stringify(liv).length < JSON.stringify(d).length) await S.push("actualizar", guardado);
+        } catch (err) {}
+      }
+      aligerando = false;
+    };
     traer();
     const alVolver = () => { if (document.visibilityState === "visible") traer(); };
     document.addEventListener("visibilitychange", alVolver);
@@ -755,6 +803,23 @@ function AdminApp() {
     const d = window.Docs.get(firmarId);
     /* El documento puede venir de la otra app: se espera a la hoja antes
        de dar el enlace por vencido. */
+    if (!d && cargaFirma.estado === "error") {
+      return (
+        <div className="sign-page">
+          <div className="sign-top"><LogoPrimary width={92} /></div>
+          <div className="sign-done">
+            <div className="sa-eyebrow">Enlace de firma</div>
+            <h1 style={{ fontFamily: "var(--serif)", fontWeight: 400, fontSize: 34, lineHeight: 1.1, margin: 0, color: "var(--ink)" }}>
+              No pudimos abrir tu documento.
+            </h1>
+            <p style={{ fontSize: 13.5, lineHeight: 1.7, color: "var(--fg-muted)", margin: 0 }}>
+              La conexión tardó demasiado. Revisa tu señal e intenta de nuevo; tu enlace sigue siendo válido.
+            </p>
+            <button className="sa-btn dark" onClick={() => setCargaFirma((c) => ({ estado: "cargando", intento: c.intento + 1 }))}>Intentar de nuevo</button>
+          </div>
+        </div>
+      );
+    }
     if (!d && !sincronizado) {
       return (
         <div className="sign-page">
@@ -765,7 +830,9 @@ function AdminApp() {
               Abriendo tu documento…
             </h1>
             <p style={{ fontSize: 13.5, lineHeight: 1.7, color: "var(--fg-muted)", margin: 0 }}>
-              Un momento, lo estamos trayendo del registro de Spacio AM.
+              {cargaFirma.lento
+                ? "Está tardando más de lo normal. Seguimos intentando."
+                : "Un momento, lo estamos trayendo del registro de Spacio AM."}
             </p>
           </div>
         </div>

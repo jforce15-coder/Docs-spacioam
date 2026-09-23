@@ -1,36 +1,66 @@
-# Subir a Docs-spacioam@main
+# Archivos modificados — 23 sep 2026
 
-## 1 · Apps Script (PRIMERO, y es lo que de verdad arregla la falla)
+## 0 · El enlace de firma se quedaba en "Abriendo tu documento…"
+El enlace descargaba el registro COMPLETO (todos los contratos con sus firmas
+incrustadas, varios MB) y sin límite de tiempo. En el teléfono la respuesta no
+terminaba de llegar y la pantalla nunca cambiaba.
 
-`apps-script-contratos.txt` **no va al repo**: es el código del Apps Script.
-Ábrelo, copia todo, pégalo sobre el proyecto actual y **vuelve a publicar la
-implementación** (Implementar → Administrar implementaciones → editar → Nueva versión).
-La URL del Web App no cambia y no hay que tocar las 6 propiedades.
+- sheets-sync.js → nuevo getDoc(id): trae solo ese documento. Toda llamada
+                   tiene límite de tiempo.
+- admin.jsx      → el enlace usa getDoc; a los 8 s avisa "está tardando";
+                   si no hay respuesta, pantalla con "Intentar de nuevo".
+                   Ya no descarga el registro completo en el teléfono.
 
-**Por qué:** una celda de Google Sheets admite 50,000 caracteres. El contrato
-SAM-000128 con las dos firmas incrustadas pesa **78,735**. La escritura fallaba
-*en el servidor* — no era la red del firmante ni la pestaña cerrada. El registro
-ahora se reparte en trozos de 45,000 caracteres a lo ancho de la fila y se vuelve
-a unir al leer, y `guardarDoc` **relee la fila y compara** antes de responder
-`ok`: un ok ahora significa "quedó guardado", no "la petición llegó".
-Las filas viejas de una sola celda se siguen leyendo igual.
+Los enlaces que ya enviaste siguen funcionando: no hay que reenviar nada.
 
-## 2 · Cinco archivos a la raíz del repo
+## 0b · Contratos más livianos
+El peso venía de las firmas: el pad guardaba el lienzo completo al doble de
+resolución (≈60,000 caracteres por firma). Ahora cada firma se recorta al
+trazo y se guarda a máx. 480×160 px (≈6–10 K caracteres) — en el PDF se ve
+igual de nítida porque impresa ocupa menos que eso.
 
-| Archivo | Qué cambia |
-|---|---|
-| `sheets-sync.js` | Bandeja de salida + escritura verificada. `push` espera confirmación de las dos hojas (`DOCUMENTOS` y `CONTRATOS`/`FIRMAS`) y las trata como una sola tarea; si una falla, el documento queda en cola marcando cuál faltó y `flush()` reintenta solo esa. `pull()` fusiona en vez de sobreescribir: si un navegador tiene una firma que la hoja no conoce, gana la local y se vuelve a subir. |
-| `esign.jsx` | La firma se registra en la hoja **antes** de dar el paso por terminado. Si no confirma, el firmante ve el aviso (no un "listo" falso) y se reintenta cada 15 s. La copia firmada ya sale también cuando es el firmante quien cierra el documento — antes solo salía si Spacio AM firmaba de último. |
-| `admin.jsx` | `flush()` antes de cada `pull()` (al abrir y al recuperar el foco) y aviso con botón *Reintentar* en Documentos cuando hay firmas sin confirmar. |
-| `admin.css` | Estilo de ese aviso. |
-| `docs-store.js` | Sin cambios de comportamiento (se retiró la conciliación manual, que ya no hace falta). |
+- esign.jsx → compactSignature(): toda firma (dibujada, subida o escrita)
+              pasa por ahí antes de guardarse.
+- admin.jsx → al abrir el panel, los contratos ya firmados con firmas
+              pesadas se aligeran una sola vez en segundo plano, se marcan y se reescriben.
 
-## 3 · Después de publicar
+El certificado y su sello no dependen de la imagen: no cambian.
 
-1. Refresca docs.spacioam.com sin caché.
-2. Avísame: yo registro la firma de Roberto en SAM-000128 y el contrato queda finalizado.
+Súbelos a la raíz del repo (reemplazan los actuales). No requiere cambios en Apps Script.
 
-## Ojo
+## 1 · El correo de firma que no salía (SAM-000129 y SAM-000130)
+El modal "Enviar para firma" creaba el documento y lo daba por enviado, pero
+nunca llamaba a la plantilla del correo — solo el botón Reenviar lo hacía.
 
-La carpeta `deploy/` del proyecto es una copia vieja y no incluye `sheets-sync.js`.
-Si algo se sirve desde ahí, hay que actualizarla o eliminarla.
+- esign.jsx      → SendModal manda un correo por firmante, espera la
+                   confirmación del servidor y guarda el resultado en el
+                   documento. Si falla, lo dice.
+- app.jsx        → el aviso refleja el resultado real del envío
+- admin.jsx      → toast honesto al generar; marca "Correo no entregado" en la
+                   lista; aviso con acción en el detalle; Reenviar actualiza el estado
+- admin.css      → estilos del aviso (peach de atención, no rojo)
+- sheets-sync.js → la nota del modal viaja con el correo
+- emails.js      → esa nota aparece como párrafo en la solicitud de firma
+
+**Para los dos contratos de ayer:** ábrelos en Documentos y usa **Reenviar**
+— sale el correo con el mismo enlace.
+
+## 2 · Nuevo tipo: Adelanto de pago
+Campos: nombre, DPI, monto total, fecha de depósito, número de cuotas,
+periodicidad y monto por cuota (se calcula solo si lo dejas vacío).
+El monto se escribe en letras automáticamente.
+
+- contracts-empleados.jsx → builder buildAdelanto + monto en letras
+- app.jsx                 → tipo "Adelanto de pago", campos y defaults
+- docs-store.js           → etiqueta emp_adelanto
+
+## 3 · Firma única (solo el adelanto)
+El adelanto lo firma únicamente el colaborador, así que cierra como
+**Firmado** con esa firma: no pide contrafirma de Spacio AM, cuenta "1 de 1",
+y ni el certificado ni la hoja de FIRMAS/CONTRATOS agregan una parte que el
+documento no tiene. Los demás tipos siguen requiriendo las dos firmas.
+
+- docs-store.js   → SOLO_FIRMANTE + cierre sin contrafirma
+- admin.jsx       → conteo y botones sin contrafirma
+- esign.jsx       → certificado y resumen sin la parte de Spacio AM
+- sheets-sync.js  → filas de CONTRATOS y FIRMAS coherentes

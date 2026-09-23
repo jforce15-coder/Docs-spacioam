@@ -178,14 +178,42 @@
     setTimeout(function () { URL.revokeObjectURL(a.href); }, 400);
   }
 
-  function post(body) {
+  /* Toda llamada tiene un límite de tiempo. Sin él, una respuesta que no
+     llega (red móvil, Apps Script lento) deja la promesa colgada para
+     siempre y la pantalla que la espera nunca cambia. */
+  function post(body, ms) {
     var url = endpoint();
     if (!url) return Promise.resolve({ ok: false, pending: true, reason: "sin_endpoint" });
-    return fetch(url, {
+    var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+    var timer = null;
+    var limite = new Promise(function (res) {
+      timer = setTimeout(function () { if (ctrl) ctrl.abort(); res({ ok: false, error: "timeout" }); }, ms || 60000);
+    });
+    var req = fetch(url, {
       method: "POST",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
       body: JSON.stringify(Object.assign({ token: token() }, body)),
+      signal: ctrl ? ctrl.signal : undefined,
     }).then(function (r) { return r.json(); }).catch(function (e) { return { ok: false, error: String(e) }; });
+    return Promise.race([req, limite]).then(function (r) { clearTimeout(timer); return r; });
+  }
+
+  /* Enlace de firma: trae SOLO ese documento. Antes el enlace descargaba el
+     registro completo (listarDocs) — todos los contratos con sus firmas
+     incrustadas, varios MB — y en el teléfono esa respuesta no terminaba de
+     llegar: la pantalla se quedaba en "Abriendo tu documento…". */
+  function getDoc(id, ms) {
+    if (!id) return Promise.resolve({ ok: false, error: "sin_id" });
+    return post({ action: "getDoc", id: id }, ms || 25000).then(function (r) {
+      var d = r && r.ok ? r.doc : null;
+      if (typeof d === "string") { try { d = JSON.parse(d); } catch (e) { d = null; } }
+      if (!d) return { ok: false, error: (r && r.error) || "no_encontrado", noExiste: !!(r && r.ok) };
+      /* Si este navegador ya tiene una versión con más firmas, gana la local. */
+      var ld = F() && F().get ? F().get(id) : null;
+      if (ld && firmasCount(ld) > firmasCount(d)) return { ok: true, doc: ld };
+      if (F() && F().upsert) F().upsert(d);
+      return { ok: true, doc: d };
+    });
   }
 
   /* ── Bandeja de salida ───────────────────────────────────────
@@ -264,7 +292,7 @@
      Se fusiona, no se sobreescribe: si este navegador tiene una firma que
      la hoja todavía no conoce, gana la versión local y se vuelve a subir. */
   function pull() {
-    return post({ action: "listarDocs" }).then(function (r) {
+    return post({ action: "listarDocs" }, 90000).then(function (r) {
       if (!r || !r.ok) return { ok: false, docs: [] };
       var remotos = (r.docs || []).map(function (d) {
         if (typeof d === "string") { try { return JSON.parse(d); } catch (e) { return null; } }
@@ -365,7 +393,7 @@
     FOLDER_URL: "https://drive.google.com/drive/folders/" + FOLDER_ID,
     HOJAS: [CONTRATOS, FIRMAS], CONTRATOS: CONTRATOS, FIRMAS: FIRMAS,
     tabla: tabla, toCSV: toCSV, toTSV: toTSV, download: download,
-    push: push, pull: pull, archivar: archivar, borrar: borrar, correo: correo, post: post,
+    push: push, pull: pull, getDoc: getDoc, archivar: archivar, borrar: borrar, correo: correo, post: post,
     flush: flush, pendientes: pendientes, firmasCount: firmasCount, outbox: outRead,
     permisosRemotos: permisosRemotos, guardarPermiso: guardarPermiso,
     firmaRemota: firmaRemota, guardarFirmaRemota: guardarFirmaRemota,

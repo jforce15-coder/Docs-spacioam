@@ -23,6 +23,77 @@ function typedSignatureImage(nombre) {
   return cv.toDataURL("image/png");
 }
 
+/* ─── Firma compacta ──────────────────────────────────────────
+   Lo que pesaba el documento eran las firmas: el pad guardaba el lienzo
+   completo al doble de resolución (≈60,000 caracteres por firma). Aquí se
+   recorta al trazo, se lleva a un máximo de 480×160 px (más de lo que ocupa
+   impresa, así que en el PDF se ve igual de nítida) y la transparencia se
+   reduce a 4 niveles. Resultado: ≈6–10 K caracteres por firma.
+   El certificado no depende de la imagen, así que compactar no lo altera. */
+const FIRMA_MAX_W = 480, FIRMA_MAX_H = 160;
+function compactSignature(dataURL) {
+  return new Promise((resolve) => {
+    if (!dataURL || String(dataURL).indexOf("data:image") !== 0) { resolve(dataURL); return; }
+    const im = new Image();
+    im.onload = () => {
+      try {
+        const w = im.naturalWidth, h = im.naturalHeight;
+        const cv = document.createElement("canvas");
+        cv.width = w; cv.height = h;
+        const ctx = cv.getContext("2d");
+        ctx.drawImage(im, 0, 0);
+        const d = ctx.getImageData(0, 0, w, h).data;
+        let minX = w, minY = h, maxX = -1, maxY = -1;
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+          if (d[(y * w + x) * 4 + 3] > 20) {
+            if (x < minX) minX = x; if (x > maxX) maxX = x;
+            if (y < minY) minY = y; if (y > maxY) maxY = y;
+          }
+        }
+        if (maxX < 0) { resolve(dataURL); return; }
+        const pad = 6;
+        const sx = Math.max(0, minX - pad), sy = Math.max(0, minY - pad);
+        const sw = Math.min(w - sx, maxX - minX + pad * 2), sh = Math.min(h - sy, maxY - minY + pad * 2);
+        const k = Math.min(1, FIRMA_MAX_W / sw, FIRMA_MAX_H / sh);
+        const ow = Math.max(1, Math.round(sw * k)), oh = Math.max(1, Math.round(sh * k));
+        const out = document.createElement("canvas");
+        out.width = ow; out.height = oh;
+        const octx = out.getContext("2d");
+        octx.imageSmoothingQuality = "high";
+        octx.drawImage(cv, sx, sy, sw, sh, 0, 0, ow, oh);
+        const px = octx.getImageData(0, 0, ow, oh);
+        const p = px.data;
+        for (let i = 0; i < p.length; i += 4) {
+          const a = p[i + 3];
+          p[i] = 62; p[i + 1] = 63; p[i + 2] = 63;
+          p[i + 3] = a < 24 ? 0 : a < 96 ? 85 : a < 176 ? 170 : 255;
+        }
+        octx.putImageData(px, 0, 0);
+        const res = out.toDataURL("image/png");
+        resolve(res.length < String(dataURL).length ? res : dataURL);
+      } catch (err) { resolve(dataURL); }
+    };
+    im.onerror = () => resolve(dataURL);
+    im.src = dataURL;
+  });
+}
+/* Firmas de un documento que todavía están en el formato pesado.
+   Un documento ya compactado lleva la marca firmasCompactas y no se vuelve
+   a procesar, aunque su firma siga midiendo más que el umbral. */
+const FIRMA_PESADA = 12000;
+function docTieneFirmasPesadas(doc) {
+  if (!doc || doc.firmasCompactas) return false;
+  const imgs = (doc.firmantes || []).map((f) => f.firma && f.firma.img).concat([doc.firmaSpacio && doc.firmaSpacio.img]);
+  return imgs.some((s) => s && s.length > FIRMA_PESADA);
+}
+async function compactDocSignatures(doc) {
+  const d = JSON.parse(JSON.stringify(doc));
+  for (const f of (d.firmantes || [])) if (f.firma && f.firma.img && f.firma.img.length > FIRMA_PESADA) f.firma.img = await compactSignature(f.firma.img);
+  if (d.firmaSpacio && d.firmaSpacio.img && d.firmaSpacio.img.length > FIRMA_PESADA) d.firmaSpacio.img = await compactSignature(d.firmaSpacio.img);
+  d.firmasCompactas = 1;
+  return d;
+}
+
 /* ─── Imagen subida → fondo transparente + recorte ─────────── */
 function cleanSignatureImage(file) {
   return new Promise((resolve, reject) => {
@@ -142,11 +213,14 @@ function SignLightbox({ doc, firmante, onClose, onFirmar, preview, porSpacio }) 
 
   const firmar = async () => {
     setBusy("Registrando tu firma…");
+    /* Toda firma —dibujada, subida o escrita— pasa por aquí antes de
+       guardarse: es el único punto de entrada. */
+    const liviana = await compactSignature(img);
     if (!preview) {
-      if (guardar) window.Firmas.save(firmante.email, { img, metodo });
+      if (guardar) window.Firmas.save(firmante.email, { img: liviana, metodo });
       else if (guardada && !guardar) window.Firmas.remove(firmante.email);
     }
-    await onFirmar({ img, metodo, guardar });
+    await onFirmar({ img: liviana, metodo, guardar });
     setBusy("");
   };
 
@@ -792,7 +866,7 @@ function SignExperience({ doc, onUpdate, onExit, stepOverride, onStepChange, pre
   );
 }
 
-Object.assign(window, {
+Object.assign(window, { compactSignature, compactDocSignatures, docTieneFirmasPesadas,
   SendModal, DataRequestModal, SignExperience, SignLightbox, SignaturePad, ScaledDoc, CertificadoSheet,
   downloadSignedPdf, typedSignatureImage, cleanSignatureImage, firmasDe, ScaledCert, useFitZoom, SpacioSignModal,
 });
