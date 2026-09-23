@@ -40,7 +40,7 @@
   /* Nombre y ruta del archivo en Drive — legible, ordenable por folio */
   function fileName(doc) {
     var nm = (doc.firmanteNombre || "Sin nombre").split(/\s+/).slice(0, 3).join(" ");
-    return doc.folio + " — " + doc.tipoLabel + " — " + nm + ".pdf";
+    return doc.folio + " — " + (doc.nombre || doc.tipoLabel) + " — " + nm + ".pdf";
   }
   function drivePath(doc) {
     var d = new Date(doc.enviado || doc.creado || Date.now());
@@ -89,7 +89,7 @@
         doc.folio,
         F().fmtDateTime(doc.enviado),
         doc.categoria,
-        doc.tipoLabel,
+        (doc.nombre || doc.tipoLabel) + (doc.propiedad ? " · " + doc.propiedad : ""),
         fs.map(function (f) { return f.nombre; }).join(" · "),
         fs.map(function (f) { return f.email; }).join(" · "),
         solo ? "—" : doc.contraparteNombre,
@@ -333,14 +333,46 @@
     return post({ action: "borrarDoc", id: doc && doc.id });
   }
 
-  /* Correo: sale del mismo remitente y con la misma plantilla en las dos apps.
-     id = solicitudFirma · recordatorio · copiaFirmada · cancelado · solicitudDatos */
-  function correo(id, doc, extra) {
-    if (!window.SpacioEmails) return Promise.resolve({ ok: false, error: "sin_plantillas" });
+  /* ── Hora de Guatemala ─────────────────────────────────────
+     Guatemala es UTC−6 todo el año (no cambia de horario), así que la
+     conversión es fija y no depende de la zona del dispositivo: si quien
+     programa está de viaje, 7:00 sigue siendo 7:00 en Guatemala. */
+  var GT_MS = 6 * 3600 * 1000;
+  var GT_MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+  function p2(n) { return String(n).padStart(2, "0"); }
+  function gtPartes(t) {
+    var g = new Date((t == null ? Date.now() : new Date(t).getTime()) - GT_MS);
+    return { y: g.getUTCFullYear(), m: g.getUTCMonth() + 1, d: g.getUTCDate(), h: g.getUTCHours(), mi: g.getUTCMinutes() };
+  }
+  function gtFecha(t) { var p = gtPartes(t); return p.y + "-" + p2(p.m) + "-" + p2(p.d); }
+  /* "2026-09-24" + "07:00" (Guatemala) → ISO UTC */
+  function gtAISO(fecha, hora) {
+    var a = String(fecha || "").split("-").map(Number), b = String(hora || "").split(":").map(Number);
+    if (a.length !== 3 || !a[0] || isNaN(b[0])) return null;
+    return new Date(Date.UTC(a[0], a[1] - 1, a[2], b[0] + 6, b[1] || 0)).toISOString();
+  }
+  function gtEtiqueta(iso) {
+    if (!iso) return "—";
+    var p = gtPartes(iso), h12 = p.h % 12 || 12;
+    return p.d + " " + GT_MESES[p.m - 1] + " " + p.y + " · " + h12 + ":" + p2(p.mi) + (p.h < 12 ? " a. m." : " p. m.");
+  }
+  /* Próxima vez que el reloj de Guatemala marque hh:00 (con 5 min de margen). */
+  function gtProxima(hh) {
+    var hoy = gtFecha(), hora = p2(hh) + ":00";
+    var iso = gtAISO(hoy, hora);
+    if (new Date(iso).getTime() > Date.now() + 5 * 60000) return { fecha: hoy, hora: hora };
+    return { fecha: gtFecha(Date.now() + 86400000), hora: hora };
+  }
+  var GT = { partes: gtPartes, fecha: gtFecha, aISO: gtAISO, etiqueta: gtEtiqueta, proxima: gtProxima };
+
+  /* Arma el correo (asunto + HTML) sin enviarlo: lo usan el envío inmediato
+     y el programado, así los dos salen idénticos. */
+  function armarCorreo(id, doc, extra) {
+    if (!window.SpacioEmails) return { error: "sin_plantillas" };
     var F = window.Docs;
     var d = Object.assign({
       nombre: doc.firmanteNombre, correo: doc.firmanteEmail,
-      documento: doc.tipoLabel, folio: doc.folio,
+      documento: doc.nombre || doc.tipoLabel, folio: doc.folio,
       contraparte: doc.contraparteNombre, certificado: doc.certificado || "",
       fechaFirmante: doc.firmaFirmante ? F.fmtDateTime(doc.firmaFirmante.ts) : "pendiente",
       fechaSpacio: doc.firmaSpacio ? F.fmtDateTime(doc.firmaSpacio.ts) : "pendiente",
@@ -348,7 +380,7 @@
       url: (window.SPACIO_FIRMA_BASE || "https://docs.spacioam.com/index.html") + "?firmar=" + doc.id,
     }, extra || {});
     var ASUNTOS = {
-      solicitudFirma: "Tu " + (doc.tipoLabel || "documento").toLowerCase() + " está listo para firmar",
+      solicitudFirma: doc.nombre ? doc.nombre + " · listo para firmar" : "Tu " + (doc.tipoLabel || "documento").toLowerCase() + " está listo para firmar",
       recordatorioFirma: "Recordatorio: tu " + (doc.tipoLabel || "documento").toLowerCase() + " sigue pendiente de firma",
       copiaFirmada: "Tu copia firmada · " + doc.folio,
       envioCancelado: "Cancelamos el envío de tu " + (doc.tipoLabel || "documento").toLowerCase(),
@@ -357,14 +389,51 @@
     var m = window.SpacioEmails.build(id, d, {});
     var destinos = (extra && extra.to) ||
       (doc.firmantes || []).map(function (f) { return f.email; }).join(",");
-    if (!destinos) return Promise.resolve({ ok: false, error: "sin_destino" });
-    return post({
-      action: "enviarCorreo", to: destinos,
+    if (!destinos) return { error: "sin_destino" };
+    return {
+      to: destinos,
       nota: (extra && extra.mensaje) || doc.mensaje || "",
-      asunto: (extra && extra.asunto) || ASUNTOS[id] || ("Spacio AM · " + doc.tipoLabel),
+      asunto: (extra && extra.asunto) || ASUNTOS[id] || ("Spacio AM · " + (doc.nombre || doc.tipoLabel)),
       html: m.html, texto: m.text || "",
       bcc: (extra && extra.bcc) || doc.contraparteEmail || "",
       pdfBase64: (extra && extra.pdfBase64) || "", pdfNombre: (extra && extra.pdfNombre) || "",
+    };
+  }
+  /* Correo: sale del mismo remitente y con la misma plantilla en las dos apps.
+     id = solicitudFirma · recordatorio · copiaFirmada · cancelado · solicitudDatos */
+  function correo(id, doc, extra) {
+    var c = armarCorreo(id, doc, extra);
+    if (c.error) return Promise.resolve({ ok: false, error: c.error });
+    return post(Object.assign({ action: "enviarCorreo" }, c));
+  }
+
+  /* Envío programado: el servidor guarda un correo ya armado por firmante y
+     un activador de Apps Script lo manda a la hora indicada — aunque este
+     navegador esté cerrado. Al salir, el servidor actualiza el documento. */
+  function programar(doc, sendAt) {
+    var envios = [];
+    for (var i = 0; i < (doc.firmantes || []).length; i++) {
+      var f = doc.firmantes[i];
+      var c = armarCorreo("solicitudFirma", doc, { to: f.email, nombre: f.nombre, mensaje: doc.mensaje || "" });
+      if (c.error) return Promise.resolve({ ok: false, error: c.error });
+      envios.push(c);
+    }
+    return post({ action: "programarCorreo", docId: doc.id, folio: doc.folio, sendAt: sendAt, etiqueta: gtEtiqueta(sendAt) + " (Guatemala)", envios: envios });
+  }
+  function cancelarProgramado(docId) { return post({ action: "cancelarProgramado", docId: docId }, 25000); }
+
+  /* Propiedades de EPI: el backend de Contratos las lee de la hoja de EPI
+     (Config → props). Se guardan aquí para que el selector abra al instante
+     y se refrescan en segundo plano. */
+  var PROPS_KEY = "spacio_props_epi_v1";
+  function propiedadesCache() {
+    try { var c = JSON.parse(localStorage.getItem(PROPS_KEY) || "null"); return (c && c.list) || []; } catch (e) { return []; }
+  }
+  function propiedades() {
+    return post({ action: "propiedades" }, 30000).then(function (r) {
+      if (!r || !r.ok || !Array.isArray(r.propiedades)) return { ok: false, error: (r && r.error) || "sin_respuesta", list: propiedadesCache() };
+      try { localStorage.setItem(PROPS_KEY, JSON.stringify({ ts: Date.now(), list: r.propiedades })); } catch (e) {}
+      return { ok: true, list: r.propiedades };
     });
   }
 
@@ -393,7 +462,8 @@
     FOLDER_URL: "https://drive.google.com/drive/folders/" + FOLDER_ID,
     HOJAS: [CONTRATOS, FIRMAS], CONTRATOS: CONTRATOS, FIRMAS: FIRMAS,
     tabla: tabla, toCSV: toCSV, toTSV: toTSV, download: download,
-    push: push, pull: pull, getDoc: getDoc, archivar: archivar, borrar: borrar, correo: correo, post: post,
+    push: push, pull: pull, getDoc: getDoc, GT: GT, armarCorreo: armarCorreo, programar: programar,
+    cancelarProgramado: cancelarProgramado, propiedades: propiedades, propiedadesCache: propiedadesCache, archivar: archivar, borrar: borrar, correo: correo, post: post,
     flush: flush, pendientes: pendientes, firmasCount: firmasCount, outbox: outRead,
     permisosRemotos: permisosRemotos, guardarPermiso: guardarPermiso,
     firmaRemota: firmaRemota, guardarFirmaRemota: guardarFirmaRemota,

@@ -299,11 +299,13 @@ function SendModal({ open, tipo, data, custom, edits, sugerido, onClose, onSent 
   const [f2, setF2] = React.useState(null);
   const [mensaje, setMensaje] = React.useState("");
   const [busy, setBusy] = React.useState("");
-  React.useEffect(() => { if (open) { setF1({ nombre: sugerido || "", email: "" }); setF2(null); setMensaje(""); setBusy(""); } }, [open, sugerido]);
+  const [nombreDoc, setNombreDoc] = React.useState("");
+  const [cuando, setCuando] = React.useState({ modo: "ahora" });
+  React.useEffect(() => { if (open) { setF1({ nombre: sugerido || "", email: "" }); setF2(null); setMensaje(""); setBusy(""); setNombreDoc(window.Docs.TIPO_LABEL[tipo] || ""); setCuando({ modo: "ahora" }); } }, [open, sugerido]);
   if (!open) return null;
 
   const ok = (f) => f && f.nombre.trim().length > 3 && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(f.email.trim());
-  const ready = ok(f1) && (!f2 || ok(f2));
+  const ready = ok(f1) && (!f2 || ok(f2)) && window.ProgramarEnvio.valido(cuando);
 
   /* El correo se manda AQUÍ y se espera su confirmación.
      Antes esto solo creaba el documento y lo daba por enviado: el registro
@@ -312,16 +314,36 @@ function SendModal({ open, tipo, data, custom, edits, sugerido, onClose, onSent 
      el documento y, si alguno falla, se dice con claridad. */
   const send = async () => {
     setBusy("Guardando…");
+    const S = window.SpacioSync;
+    const sendAt = cuando.modo === "programar" && S ? S.GT.aISO(cuando.fecha, cuando.hora) : null;
     const doc = window.Docs.create({
       tipo, data, custom, edits,
+      nombre: nombreDoc,
+      propiedad: data.propiedadNombre || "", propiedadId: data.propiedadId || "",
+      programado: sendAt ? { sendAt: sendAt, etiqueta: S.GT.etiqueta(sendAt) + " (hora de Guatemala)" } : null,
       firmantes: [f1].concat(f2 ? [f2] : []).map((f) => ({ nombre: f.nombre.trim(), email: f.email.trim().toLowerCase() })),
       contraparteNombre: data.contratanteNombre,
       mensaje: mensaje.trim(),
     });
-    const S = window.SpacioSync;
     if (!S) { setBusy(""); onSent(doc, { ok: false, fallidos: (doc.firmantes || []).map((f) => f.email), motivo: "sin_sync" }); return; }
 
     const sync = await S.push("crear", doc);
+
+    /* Programado: el servidor guarda los correos ya armados y los manda a la
+       hora indicada. Aquí solo se confirma que quedó registrado. */
+    if (sendAt) {
+      setBusy("Programando…");
+      let r;
+      try { r = await S.programar(doc, sendAt); } catch (err) { r = { ok: false, error: String(err) }; }
+      const d = window.Docs.update(doc.id, (dd) => {
+        dd.programado = Object.assign({}, dd.programado, r && r.ok ? { registrado: new Date().toISOString(), error: "" } : { error: (r && r.error) || "sin_respuesta" });
+        return dd;
+      }) || doc;
+      if (!(r && r.ok)) await S.push("actualizar", d);
+      setBusy("");
+      onSent(d, { ok: !!(r && r.ok), programado: true, etiqueta: d.programado.etiqueta, enviados: [], fallidos: r && r.ok ? [] : (d.firmantes || []).map((f) => f.email), motivo: (r && r.error) || "", sync: sync });
+      return;
+    }
     setBusy("Enviando correo…");
     const envios = [];
     for (const f of (doc.firmantes || [])) {
@@ -381,6 +403,13 @@ function SendModal({ open, tipo, data, custom, edits, sugerido, onClose, onSent 
           <p style={{ margin: 0, fontSize: 13, lineHeight: 1.7, letterSpacing: ".02em", color: "var(--fg-muted)" }}>
             {window.Docs.TIPO_LABEL[tipo] || "Documento"} · cada firmante recibe un enlace personal para revisar y firmar. {window.Docs.soloFirmante({ tipo: tipo }) ? "Este documento se cierra con su firma." : "Spacio AM contrafirma al final."}
           </p>
+          <label className="sa-field">
+            <span>Nombre del documento</span>
+            <input value={nombreDoc} maxLength={120} placeholder={window.Docs.TIPO_LABEL[tipo] || "Documento"} onChange={(e) => setNombreDoc(e.target.value)} />
+          </label>
+          {data.propiedadNombre && (
+            <div className="sa-note"><span>Vinculado a la propiedad <b style={{ color: "var(--ink)" }}>{data.propiedadNombre}</b>.</span></div>
+          )}
           {campos(f1, setF1, 1)}
           {f2 ? campos(f2, setF2, 2) : (
             <button className="sa-btn ghost" onClick={() => setF2({ nombre: "", email: "" })}>Agregar segundo firmante</button>
@@ -390,12 +419,13 @@ function SendModal({ open, tipo, data, custom, edits, sugerido, onClose, onSent 
             <textarea rows={2} value={mensaje} placeholder="Cualquier nota que quieras incluir en el correo."
               onChange={(e) => setMensaje(e.target.value)} />
           </label>
+          <window.ProgramarEnvio value={cuando} onChange={setCuando} />
           <div className="sa-note">
             El enlace solo funciona con el correo de cada firmante. Al completarse las firmas, todos reciben la copia en PDF con el certificado.
           </div>
           <div className="sa-actions">
             <button className="sa-btn dark" disabled={!ready || !!busy} onClick={send} style={{ flex: 1 }}>
-              {busy || "Enviar para firma"}
+              {busy || (cuando.modo === "programar" ? "Programar envío" : "Enviar para firma")}
             </button>
             <button className="sa-btn ghost" onClick={onClose}>Cancelar</button>
           </div>

@@ -332,3 +332,35 @@ html,body{overflow-x:hidden;max-width:100%}
 .sa-aviso-correo{display:flex;flex-direction:column;gap:6px;padding:14px 16px;border:1px solid var(--attention,#F2755A);background:var(--attention-tint,rgba(242,117,90,.1));border-radius:14px}
 .sa-aviso-correo b{font-weight:600;letter-spacing:.04em;color:var(--attention-text,#B54D36)}
 .sa-aviso-correo span{font-size:12.5px;line-height:1.6;letter-spacing:.03em;color:var(--fg-muted)}
+
+/* Acción por fila (Duplicar): no dispara la apertura del detalle. */
+.sa-table td.sa-td-act{width:1%;white-space:nowrap;text-align:right}
+
+/* Envío programado: pendiente, no alerta (graphite). */
+.sa-badge.programado{background:rgba(111,104,103,.12);color:#6F6867}
+.sa-aviso-correo.neutro{border-color:var(--warm-grey);background:var(--beige-soft)}
+.sa-aviso-correo.neutro b{color:var(--ink)}
+.aviso-acc{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+.prog-envio{display:flex;flex-direction:column;gap:12px}
+.prog-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
+.prog-grid .sa-field{min-width:0}
+/* Safari/iOS ignora box-sizing en date/time con apariencia nativa: se quita. */
+.prog-grid input{-webkit-appearance:none;appearance:none;box-sizing:border-box;min-width:0;max-width:100%;min-height:51px;text-align:left}
+.prog-grid input::-webkit-date-and-time-value{text-align:left}
+.prog-rapidos{display:flex;flex-wrap:wrap;gap:8px}
+.prog-rapidos .sa-chip{cursor:pointer;font-family:var(--sans)}
+.prog-rapidos .sa-chip.on{border-color:var(--peach);background:var(--peach-12);color:var(--ink)}
+.prog-resumen{display:flex;flex-direction:column;gap:4px;font-size:12.5px;line-height:1.6;letter-spacing:.03em;color:var(--ink)}
+.prog-resumen.err{color:#C0392B}
+.prog-ahora{font-size:11px;color:var(--fg-muted)}
+.titulo-edit{display:flex;align-items:baseline;flex-wrap:wrap;gap:6px 14px}
+.titulo-btn{background:none;border:0;padding:0;font-family:var(--sans);font-size:10px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:var(--fg-muted);cursor:pointer;text-decoration:underline;text-underline-offset:4px}
+.titulo-btn:hover{color:var(--ink)}
+.titulo-form{display:flex;flex-direction:column;gap:10px;min-width:0}
+.titulo-form input{font-family:var(--serif);font-size:24px;color:var(--ink);padding:10px 14px;border:1px solid var(--warm-grey);border-radius:14px;background:var(--alabaster);width:100%}
+.titulo-form input:focus{outline:0;border-color:var(--peach);box-shadow:0 0 0 3px rgba(233,130,106,.35)}
+.titulo-acc{display:flex;flex-wrap:wrap;gap:8px}
+.titulo-nota{font-size:11px;letter-spacing:.03em;color:var(--fg-muted)}
+.sa-row-prop .sa-row-v{flex:1;min-width:0}
+.prop-err{display:flex;align-items:center;flex-wrap:wrap;gap:10px;font-size:12px;color:var(--fg-muted)}
+@media (max-width:480px){.prog-grid{grid-template-columns:1fr}}

@@ -240,8 +240,13 @@ function SectionsEditor({ edits }) {
   );
 }
 
-function Generator({ onSent }) {
+function Generator({ onSent, base }) {
   const [tipo, setTipo] = useState("limpieza");
+  /* Punto de partida: desde cero o sobre un documento existente.
+     baseDoc = el documento del que se copiaron los datos (solo referencia:
+     el original no se toca; al enviar se crea un folio nuevo). */
+  const [origen, setOrigen] = useState(base && base.doc ? "existente" : "cero");
+  const [baseDoc, setBaseDoc] = useState(null);
   const [sendOpen, setSendOpen] = useState(false);
   const [datosOpen, setDatosOpen] = useState(false);
   const chPlazo = tipo.endsWith("_lt") ? "largo" : "corto";
@@ -322,6 +327,53 @@ function Generator({ onSent }) {
       data.actaFecha, data.actaNotario, data.regNumero, data.regFolio, data.regLibro]);
 
   const set = (k, v) => setData((d) => ({ ...d, [k]: v }));
+
+  const datosEnBlanco = (t) => {
+    let restored = {};
+    try { restored = JSON.parse(localStorage.getItem(LS_KEY) || "{}"); } catch (e) {}
+    return {
+      ...SPACIO_DEFAULTS, ...COHOSTING_DEFAULTS, ...EMPLEADO_DEFAULTS,
+      empFechaInicio: todayISO(), empFechaEfectiva: todayISO(),
+      prestadorNombre: "", prestadorDPI: "",
+      pagoMonto: t === "limpieza" ? "75.00" : "100.00",
+      fecha: todayISO(), fechaInicio: todayISO(),
+      ...restored,
+    };
+  };
+  /* Carga un documento existente como base: tipo, datos, cláusulas
+     editadas y contrato personalizado. La fecha del documento pasa a hoy;
+     todo lo demás queda igual para que solo se ajuste lo que cambia. */
+  const cargarBase = (doc) => {
+    if (!doc) return;
+    const t = doc.tipo || "limpieza";
+    setTipo(t);
+    setData({ ...datosEnBlanco(t), ...(doc.data || {}), fecha: todayISO(),
+      propiedadId: doc.propiedadId || (doc.data || {}).propiedadId || "",
+      propiedadNombre: doc.propiedad || (doc.data || {}).propiedadNombre || "" });
+    if (doc.custom) setCustom(doc.custom);
+    setClauseEdits((m) => ({ ...m, [t]: { ...(doc.edits || {}) } }));
+    setDpiFile(null); setDpiUrl(null);
+    setBaseDoc(doc); setOrigen("existente");
+    setToast("Datos de " + doc.folio + " cargados. Ajusta lo que cambie y envía.");
+  };
+  const empezarDeCero = () => {
+    setOrigen("cero"); setBaseDoc(null);
+    setData(datosEnBlanco(tipo));
+    setClauseEdits((m) => { const n = { ...m }; delete n[tipo]; return n; });
+  };
+  /* Duplicar desde Documentos: llega un doc nuevo cada vez (base.key). */
+  useEffect(() => { if (base && base.doc) cargarBase(base.doc); }, [base && base.key]);
+
+  const opcionesBase = (window.Docs ? window.Docs.all() : [])
+    .filter((d) => !d.demo && d.data)
+    .sort((x, y) => String(y.enviado || "").localeCompare(String(x.enviado || "")))
+    .map((d) => ({
+      /* Etiqueta = folio + firmante (lo que distingue un documento de otro);
+         sub corto (la fecha) para que no empuje la etiqueta fuera del control. */
+      value: d.id,
+      label: d.folio + " · " + (((d.firmantes || [])[0] || {}).nombre || d.firmanteNombre || (d.tipoLabel || "Documento")),
+      sub: d.enviado ? window.Docs.fmtDate(d.enviado) : "",
+    }));
 
   /* Per-clause edits, keyed by contract type → { [clauseKey]: rawText } */
   const [clauseEdits, setClauseEdits] = useState(() => {
@@ -561,6 +613,34 @@ function Generator({ onSent }) {
           <hr className="brand-line" />
         </div>
 
+        {/* ─── Punto de partida ─── */}
+        <div className="section">
+          <div className="section-label">Punto de partida</div>
+          <PanelSeg size="sm" value={origen}
+            onChange={(v) => { if (v === "cero") empezarDeCero(); else setOrigen("existente"); }}
+            options={[{ value: "cero", label: "Desde cero" }, { value: "existente", label: "Usar uno existente" }]} />
+          {origen === "existente" && (
+            <div style={{ marginTop: 14 }}>
+              {opcionesBase.length ? (
+                <PanelSelect
+                  block
+                  icon="file"
+                  value={baseDoc ? baseDoc.id : ""}
+                  placeholder="Busca por folio, tipo o nombre"
+                  onChange={(id) => cargarBase(window.Docs.get(id))}
+                  options={opcionesBase}
+                  searchable
+                />
+              ) : (
+                <div className="footnote">Todavía no hay documentos en el registro para usar como base.</div>
+              )}
+              {baseDoc && (
+                <div className="footnote">Basado en <b>{baseDoc.folio}</b>. El original no cambia: al enviar se crea un folio nuevo.</div>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* ─── Tipo ─── */}
         <div className="section">
           <div className="section-label"><span className="num">01</span> Tipo de contrato</div>
@@ -577,6 +657,14 @@ function Generator({ onSent }) {
               <span className="plazo-lbl">Plazo</span>
               <PanelSeg size="sm" value={chPlazo} onChange={setPlazo}
                 options={[{ value: "corto", label: "Corto plazo" }, { value: "largo", label: "Largo plazo" }]} />
+            </div>
+          )}
+          {isCohosting && (
+            <div className="field" style={{ marginTop: 16 }}>
+              <label>Propiedad (EPI)</label>
+              <window.PropiedadPicker value={data.propiedadId}
+                onChange={(p) => setData((d) => ({ ...d, propiedadId: p ? p.id : "", propiedadNombre: p ? p.name : "" }))} />
+              <div className="footnote">Opcional. También puedes vincularla después desde Documentos.</div>
             </div>
           )}
         </div>
@@ -1086,7 +1174,7 @@ function Generator({ onSent }) {
         edits={editsForTipo}
         sugerido={isEmpleado ? data.empNombre : isCohosting ? (isJuridica ? data.repNombre : data.duenoNombre) : data.prestadorNombre}
         onClose={() => setSendOpen(false)}
-        onSent={(doc, res) => { setSendOpen(false); if (onSent) onSent(doc, res); else setToast(res && res.ok === false ? "El correo NO salió para " + (res.fallidos || []).join(", ") + ". Ábrelo en Documentos y usa Reenviar." : "Correo de firma enviado a " + ((res && res.enviados) || []).join(", ")); }}
+        onSent={(doc, res) => { setSendOpen(false); if (onSent) onSent(doc, res); else setToast(res && res.programado ? (res.ok ? "Envío programado para el " + res.etiqueta + "." : "No se pudo programar el envío. Ábrelo en Documentos y usa Enviar ahora.") : res && res.ok === false ? "El correo NO salió para " + (res.fallidos || []).join(", ") + ". Ábrelo en Documentos y usa Reenviar." : "Correo de firma enviado a " + ((res && res.enviados) || []).join(", ")); }}
       />
 
       <DataRequestModal

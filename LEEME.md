@@ -1,4 +1,48 @@
-# Archivos modificados — 23 sep 2026
+# Archivos modificados
+
+## ⚠️ Esta vez SÍ hay que actualizar Apps Script
+1. Copia **apps-script-contratos.txt** completo en Code.gs del proyecto de Contratos.
+2. Ejecuta **instalar()** una vez (▷). Pedirá un permiso nuevo (activadores y
+   leer la hoja de EPI): acéptalo. Crea el activador enviarProgramados (cada 5 min)
+   y la hoja PROGRAMADOS.
+3. Implementar → Administrar implementaciones → editar → **Nueva versión**.
+La cuenta que corre el script necesita acceso de lectura a la hoja de EPI
+(1-SfKC-evkK24qfOrrvIrcDs6ckGAmRzSLS_IYB8cYZg).
+
+## Sube también index.html
+Trae las versiones nuevas (?v=) de cada archivo. Sin eso el navegador —sobre todo
+en el teléfono— puede seguir usando las copias viejas guardadas.
+
+## Nuevo · Envío programado (hora de Guatemala)
+- Al enviar para firma: "Enviar ahora" o "Programar" con fecha y hora de
+  Guatemala (atajos Hoy/Mañana 7:00 y 9:00). Guatemala es UTC−6 fijo: vale
+  aunque programes desde otro país.
+- El servidor guarda los correos ya armados y los manda solo a la hora — con
+  el navegador cerrado. Al salir, el documento pasa a "Enviado a firma".
+- En el detalle: "Enviar ahora" o "Cancelar envío".
+
+## Nuevo · Renombrar documento
+- Campo "Nombre del documento" al enviar; "Renombrar" en el detalle de
+  cualquier documento ya creado. Cambia lista, hoja, PDF y próximos correos;
+  el contenido del contrato no cambia.
+
+## Nuevo · Propiedad vinculada (co-hosting)
+- Selector de propiedades de EPI en el generador (co-hosting) y en el detalle
+  del documento, antes o después de enviarlo. La lista sale de EPI → Config → props.
+
+## Archivos nuevos
+- envios.jsx → selector de propiedad, programación, renombrar, aviso de programado.
+
+
+## Nuevo · Usar un documento existente como base
+- app.jsx    → "Punto de partida" en el generador: Desde cero / Usar uno
+               existente (buscador por folio, tipo o nombre). Carga tipo,
+               datos, cláusulas editadas y contrato personalizado; la fecha
+               pasa a hoy. El original no cambia: al enviar sale folio nuevo.
+- admin.jsx  → botón Duplicar en cada fila de Documentos y en el detalle:
+               abre el generador con esos datos precargados.
+- admin.css  → columna de acción de la tabla.
+ — 23 sep 2026
 
 ## 0 · El enlace de firma se quedaba en "Abriendo tu documento…"
 El enlace descargaba el registro COMPLETO (todos los contratos con sus firmas

@@ -11,6 +11,7 @@
 
   var ESTADOS = {
     borrador:  { label: "Borrador",           cls: "borrador" },
+    programado:{ label: "Envío programado",   cls: "programado" },
     enviado:   { label: "Enviado a firma",    cls: "enviado" },
     visto:     { label: "Visto por firmante", cls: "visto" },
     parcial:   { label: "Firmado por 1 parte", cls: "parcial" },
@@ -113,6 +114,10 @@
       proyectoId: payload.proyectoId || "",
       proyectoNombre: payload.proyectoNombre || "",
       propiedad: payload.propiedad || "",
+      propiedadId: payload.propiedadId || "",
+      /* Nombre libre del documento; si está vacío se usa el del tipo. */
+      nombre: String(payload.nombre || "").trim() === (TIPO_LABEL[payload.tipo] || "") ? "" : String(payload.nombre || "").trim(),
+      programado: payload.programado || null,
       origen: payload.origen || (window.SPACIO_DOCS_ORIGEN || "docs"),
       contraparteNombre: payload.contraparteNombre || "Juan Francisco Ovalle Lanuza",
       contraparteEmail: payload.contraparteEmail || "jovalle@spacioam.com",
@@ -121,15 +126,16 @@
       custom: payload.custom || null,
       edits: payload.edits || {},
       creado: nowISO(),
-      enviado: nowISO(),
+      enviado: payload.programado ? payload.programado.sendAt : nowISO(),
       visto: null,
       firmaSpacio: null,
-      estado: "enviado",
+      estado: payload.programado ? "programado" : "enviado",
       certificado: null,
       historial: [],
     };
     log(doc, "Documento generado por Administración");
-    log(doc, "Solicitud de firma enviada a " + fs.map(function (f) { return f.email; }).join(" y "));
+    if (payload.programado) log(doc, "Envío programado para el " + payload.programado.etiqueta + " a " + fs.map(function (f) { return f.email; }).join(" y "));
+    else log(doc, "Solicitud de firma enviada a " + fs.map(function (f) { return f.email; }).join(" y "));
     write(read().concat([doc]));
     emit();
     return doc;
@@ -146,6 +152,28 @@
     write(list);
     emit();
     return out;
+  }
+
+  /* Nombre visible del documento (lista, correos, PDF). */
+  function titulo(d) { return (d && (d.nombre || d.tipoLabel)) || "Documento"; }
+  function rename(id, nombre) {
+    return update(id, function (d) {
+      var n = String(nombre || "").trim();
+      var antes = titulo(d);
+      d.nombre = n === d.tipoLabel ? "" : n;
+      if (titulo(d) === antes) return d;
+      return log(d, "Documento renombrado: “" + antes + "” → “" + titulo(d) + "”");
+    });
+  }
+  /* Vínculo con una propiedad de EPI (co-hosting). p = { id, name } o null. */
+  function setPropiedad(id, p) {
+    return update(id, function (d) {
+      var antes = d.propiedad || "";
+      d.propiedadId = p ? String(p.id || "") : "";
+      d.propiedad = p ? String(p.name || "") : "";
+      if (antes === d.propiedad) return d;
+      return log(d, d.propiedad ? "Vinculado a la propiedad " + d.propiedad : "Se quitó el vínculo con " + antes);
+    });
   }
 
   function markVisto(id) {
@@ -325,6 +353,7 @@
     ESTADOS: ESTADOS, TIPO_LABEL: TIPO_LABEL, CATEGORIA: CATEGORIA,
     all: all, get: get, create: create, update: update, remove: remove, resend: resend,
     soloFirmante: soloFirmante, SOLO_FIRMANTE: SOLO_FIRMANTE,
+    titulo: titulo, rename: rename, setPropiedad: setPropiedad, log: log,
     markVisto: markVisto, signFirmante: signFirmante, signSpacio: signSpacio, faltanFirmas: faltanFirmas,
     cancel: cancel, voidDoc: voidDoc,
     fmtDate: fmtDate, fmtDateTime: fmtDateTime, relative: relative, hash: hash,

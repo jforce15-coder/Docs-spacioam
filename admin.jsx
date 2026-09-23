@@ -213,7 +213,7 @@ function AdminTopBar({ user, lang, setLang, notiTotal, onNotiOpen, onAccount, on
 }
 
 /* ─── Listado de documentos ───────────────────────────────── */
-function DocsTable({ docs, onOpen, lang }) {
+function DocsTable({ docs, onOpen, onDuplicar, lang }) {
   const F = window.Docs;
   const T = (k) => window.SpacioT.t(lang, k);
   if (!docs.length) return <div className="sa-table-wrap"><div className="sa-empty">{T("empty_docs")}</div></div>;
@@ -223,7 +223,7 @@ function DocsTable({ docs, onOpen, lang }) {
         <table className="sa-table">
           <thead>
             <tr>
-              <th>{T("th_folio")}</th><th>{T("th_doc")}</th><th>{T("th_signer")}</th><th>{T("th_sent")}</th><th>{T("th_signs")}</th><th>{T("th_state")}</th>
+              <th>{T("th_folio")}</th><th>{T("th_doc")}</th><th>{T("th_signer")}</th><th>{T("th_sent")}</th><th>{T("th_signs")}</th><th>{T("th_state")}</th>{onDuplicar && <th aria-label="Acciones"></th>}
             </tr>
           </thead>
           <tbody>
@@ -237,8 +237,8 @@ function DocsTable({ docs, onOpen, lang }) {
                 <tr key={d.id} onClick={() => onOpen(d)}>
                   <td className="sa-folio">{d.folio}</td>
                   <td>
-                    <span className="sa-td-doc">{d.tipoLabel}</span>
-                    <span className="sa-td-meta">{window.SpacioT.categoria(lang, d.categoria)}</span>
+                    <span className="sa-td-doc">{F.titulo(d)}</span>
+                    <span className="sa-td-meta">{window.SpacioT.categoria(lang, d.categoria)}{d.propiedad ? " · " + d.propiedad : ""}</span>
                   </td>
                   <td>
                     <span>{fs.map((f) => f.nombre).join(" · ") || d.firmanteNombre}</span>
@@ -249,7 +249,14 @@ function DocsTable({ docs, onOpen, lang }) {
                   <td>
                     <span className={"sa-badge " + est.cls}><i />{window.SpacioT.estado(lang, d.estado)}</span>
                     {d.correoFirma && (d.correoFirma.fallidos || []).length ? <span className="sa-td-meta sa-sin-correo">Correo no entregado</span> : null}
+                    {d.estado === "programado" && d.programado ? <span className="sa-td-meta">Sale {window.SpacioSync.GT.etiqueta(d.programado.sendAt)}</span> : null}
                   </td>
+                  {onDuplicar && (
+                    <td className="sa-td-act">
+                      <button className="sa-btn ghost sm sa-tip" data-tip="Abre el generador con los datos de este documento."
+                        onClick={(e) => { e.stopPropagation(); onDuplicar(d); }}>Duplicar</button>
+                    </td>
+                  )}
                 </tr>
               );
             })}
@@ -261,7 +268,7 @@ function DocsTable({ docs, onOpen, lang }) {
 }
 
 /* ─── Detalle del documento ───────────────────────────────── */
-function DocDetail({ doc, onClose, onChange, onSign, onToast, lang, perms, staff, user }) {
+function DocDetail({ doc, onClose, onChange, onSign, onToast, onDuplicar, lang, perms, staff, user }) {
   const T = (k) => window.SpacioT.t(lang, k);
   /* Gestionar el registro (reenviar, cancelar, anular, eliminar) exige
      el permiso "admin"; el firmante solo lee y descarga su copia. */
@@ -284,6 +291,38 @@ function DocDetail({ doc, onClose, onChange, onSign, onToast, lang, perms, staff
   /* Los documentos de firma única (adelanto, goce de vacaciones) no llevan
      contrafirma de Spacio AM: ni se pide ni se cuenta. */
   const soloFirma = F.soloFirmante(doc);
+  /* Programado → sale ya: se cancela en el servidor y se manda como un envío normal. */
+  const enviarAhora = async () => {
+    const S = window.SpacioSync;
+    setBusy("Enviando…");
+    try { await S.cancelarProgramado(doc.id); } catch (e) {}
+    const envios = [];
+    for (const f of (doc.firmantes || [])) {
+      let r;
+      try { r = await S.correo("solicitudFirma", doc, { to: f.email, nombre: f.nombre, mensaje: doc.mensaje || "" }); } catch (e) { r = { ok: false, error: String(e) }; }
+      envios.push({ email: f.email, ok: !!(r && r.ok), error: (r && r.error) || "" });
+    }
+    const enviados = envios.filter((x) => x.ok).map((x) => x.email), fallidos = envios.filter((x) => !x.ok).map((x) => x.email);
+    const ts = new Date().toISOString();
+    const d = F.update(doc.id, (dd) => {
+      dd.estado = "enviado"; dd.enviado = ts;
+      dd.programado = Object.assign({}, dd.programado, { adelantado: ts });
+      dd.correoFirma = { ts: ts, enviados: enviados, fallidos: fallidos, error: (envios.find((x) => !x.ok) || {}).error || "" };
+      return F.log(dd, fallidos.length ? "El correo de firma NO salió para " + fallidos.join(", ") + ". Usa Reenviar." : "Envío adelantado: correo de firma enviado a " + enviados.join(", ") + ".");
+    });
+    onChange(d); await S.push("actualizar", d);
+    setBusy("");
+    onToast(fallidos.length ? "El correo NO salió para " + fallidos.join(", ") + "." : "Correo de firma enviado a " + enviados.join(", ") + ".");
+  };
+  const cancelarProgramado = async () => {
+    if (!confirm("¿Cancelar el envío programado? El documento queda en el registro como cancelado.")) return;
+    setBusy("Cancelando…");
+    let r; try { r = await window.SpacioSync.cancelarProgramado(doc.id); } catch (e) { r = { ok: false }; }
+    const d = F.cancel(doc.id, "Envío programado cancelado antes de salir");
+    onChange(d); if (d) await window.SpacioSync.push("actualizar", d);
+    setBusy("");
+    onToast(r && r.ok ? "Envío programado cancelado." : "Cancelado aquí, pero el servidor no confirmó. Revisa la hoja PROGRAMADOS.");
+  };
   const reenviar = () => {
     const d = F.resend(doc.id);
     onChange(d);
@@ -314,7 +353,8 @@ function DocDetail({ doc, onClose, onChange, onSign, onToast, lang, perms, staff
         <div className="sa-modal-head">
           <div>
             <div className="sa-eyebrow">{doc.folio} · {window.SpacioT.categoria(lang, doc.categoria)}</div>
-            <h2 className="sa-modal-title">{doc.tipoLabel}</h2>
+            <window.TituloEditable doc={doc} puede={gestion || !!(perms && perms.generar)}
+              onGuardar={(n) => { const d = F.rename(doc.id, n); if (d) { onChange(d); if (window.SpacioSync) window.SpacioSync.push("actualizar", d); onToast("Nombre actualizado."); } }} />
             <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
               <span className={"sa-badge " + est.cls}><i />{window.SpacioT.estado(lang, doc.estado)}</span>
               {!cerrado && !doc.firmaSpacio && !soloFirma && <span className="sa-badge pendiente"><i />Falta la firma de Spacio AM</span>}
@@ -323,6 +363,9 @@ function DocDetail({ doc, onClose, onChange, onSign, onToast, lang, perms, staff
           <button className="sa-x" onClick={onClose} aria-label="Cerrar">×</button>
         </div>
         <div className="sa-modal-body">
+          {doc.estado === "programado" && (
+            <window.AvisoProgramado doc={doc} gestion={gestion} busy={busy} onEnviarAhora={enviarAhora} onCancelar={cancelarProgramado} />
+          )}
           {sinCorreo && (
             <div className="sa-aviso-correo">
               <b>El correo de firma no salió</b>
@@ -339,7 +382,18 @@ function DocDetail({ doc, onClose, onChange, onSign, onToast, lang, perms, staff
               </div>
             ))}
             {!soloFirma && <div className="sa-row"><span className="sa-row-k">Por Spacio AM</span><span className="sa-row-v">{doc.contraparteNombre}<br />{doc.contraparteEmail}</span></div>}
-            <div className="sa-row"><span className="sa-row-k">Enviado</span><span className="sa-row-v">{F.fmtDateTime(doc.enviado)}</span></div>
+            <div className="sa-row"><span className="sa-row-k">{doc.estado === "programado" ? "Sale" : "Enviado"}</span><span className="sa-row-v">{doc.estado === "programado" ? window.SpacioSync.GT.etiqueta(doc.enviado) + " (Guatemala)" : F.fmtDateTime(doc.enviado)}</span></div>
+            {(doc.categoria === "Co-hosting" || String(doc.tipo || "").indexOf("cohosting") === 0) && (
+              <div className="sa-row sa-row-prop">
+                <span className="sa-row-k">Propiedad</span>
+                <span className="sa-row-v">
+                  {gestion || (perms && perms.generar)
+                    ? <window.PropiedadPicker value={doc.propiedadId}
+                        onChange={(p) => { const d = F.setPropiedad(doc.id, p); if (d) { onChange(d); if (window.SpacioSync) window.SpacioSync.push("actualizar", d); onToast(p ? "Vinculado a " + p.name + "." : "Vínculo quitado."); } }} />
+                    : (doc.propiedad || "Sin propiedad vinculada")}
+                </span>
+              </div>
+            )}
             {doc.certificado && <div className="sa-row"><span className="sa-row-k">Certificado</span><span className="sa-row-v">{doc.certificado}</span></div>}
             <div className="sa-row"><span className="sa-row-k">Archivo</span><span className="sa-row-v">{window.SpacioSync.fileName(doc)}<br />
               <span style={{ fontSize: 11, color: "var(--fg-muted)" }}>{window.SpacioSync.drivePath(doc).slice(0, 4).join(" / ")}</span></span></div>
@@ -371,21 +425,25 @@ function DocDetail({ doc, onClose, onChange, onSign, onToast, lang, perms, staff
                   () => onToast("Enlace de firma copiado."), () => onToast("No se pudo copiar el enlace."));
               }}>Copiar enlace</button>
             )}
+            {onDuplicar && (
+              <button className="sa-btn ghost sa-tip" data-tip="Abre el generador con los datos de este documento." onClick={() => onDuplicar(doc)}>Duplicar</button>
+            )}
             {doc.estado === "firmado" && (
               <button className="sa-btn dark" disabled={!!busy} onClick={() => downloadSignedPdf(doc, setBusy)}>
                 {busy || "Copia firmada"}
               </button>
             )}
-            {gestion && !cerrado && doc.estado !== "firmado" && (
+            {gestion && !cerrado && doc.estado !== "firmado" && doc.estado !== "programado" && (
               <button className="sa-btn ghost sa-tip" data-tip="Vuelve a enviar el correo con el mismo enlace de firma." disabled={!!busy} onClick={reenviar}>{busy || "Reenviar"}</button>
             )}
             {gestion && cerrado && (
               <button className="sa-btn ghost sa-tip" data-tip="Reabre el envío cancelado y manda de nuevo el correo de firma." disabled={!!busy} onClick={reenviar}>{busy || "Reactivar"}</button>
             )}
-            {gestion && doc.estado !== "firmado" && !cerrado && (
+            {gestion && doc.estado !== "firmado" && doc.estado !== "programado" && !cerrado && (
               <button className="sa-btn danger sa-tip" data-tip="Invalida el enlace de firma. El documento queda en el registro y puedes reactivarlo y reenviarlo." onClick={() => {
                 const m = prompt("Motivo de la cancelación (opcional):", "");
                 if (m === null) return;
+                if (doc.programado && window.SpacioSync) window.SpacioSync.cancelarProgramado(doc.id);
                 act(() => F.cancel(doc.id, m), "Envío cancelado.");
               }}>Cancelar</button>
             )}
@@ -441,7 +499,7 @@ function SyncPendiente() {
   );
 }
 
-function DocsPanel({ onSign, onToast, onNuevo, refreshKey, lang, user, perms, staff }) {
+function DocsPanel({ onSign, onToast, onNuevo, onDuplicar, refreshKey, lang, user, perms, staff }) {
   const F = window.Docs;
   const T = (k) => window.SpacioT.t(lang, k);
   const P = window.SpacioPerms;
@@ -464,7 +522,7 @@ function DocsPanel({ onSign, onToast, onNuevo, refreshKey, lang, user, perms, st
     if (estado !== "todos" && d.estado !== estado) return false;
     if (cat !== "todas" && d.categoria !== cat) return false;
     if (q.trim()) {
-      const s = (d.firmanteNombre + " " + d.firmanteEmail + " " + d.folio + " " + d.tipoLabel).toLowerCase();
+      const s = (d.firmanteNombre + " " + d.firmanteEmail + " " + d.folio + " " + d.tipoLabel + " " + (d.nombre || "") + " " + (d.propiedad || "")).toLowerCase();
       if (s.indexOf(q.trim().toLowerCase()) < 0) return false;
     }
     return true;
@@ -516,10 +574,11 @@ function DocsPanel({ onSign, onToast, onNuevo, refreshKey, lang, user, perms, st
         </div>
       </div>
 
-      <DocsTable docs={filtered} onOpen={setSel} lang={lang} />
+      <DocsTable docs={filtered} onOpen={setSel} onDuplicar={onDuplicar} lang={lang} />
 
       {sel && (
         <DocDetail doc={F.get(sel.id)} lang={lang} perms={perms} staff={staff} user={user} onClose={() => setSel(null)} onSign={onSign} onToast={onToast}
+          onDuplicar={onDuplicar ? (d) => { setSel(null); onDuplicar(d); } : null}
           onChange={(d) => { setSel(d); setTick((t) => t + 1); }} />
       )}
     </div>
@@ -709,6 +768,8 @@ function AdminApp() {
     try { return JSON.parse(sessionStorage.getItem("spacio_admin_user") || "null"); } catch (e) { return null; }
   });
   const [tab, setTab] = useS("docs");
+  /* Documento que se abre en el generador como base (Duplicar). */
+  const [baseGen, setBaseGen] = useS(null);
   const [signing, setSigning] = useS(null);
   const [toast, setToast] = useS("");
   const [refreshKey, setRefreshKey] = useS(0);
@@ -923,12 +984,16 @@ function AdminApp() {
 
       {tabActual === "docs" && (
         <DocsPanel refreshKey={refreshKey} lang={lang} user={user} perms={perms} staff={staff}
-          onNuevo={() => setTab("nuevo")} onToast={setToast} onSign={(d, ro) => setSigning({ doc: d, readOnly: !!ro })} />
+          onNuevo={() => { setBaseGen(null); setTab("nuevo"); }} onToast={setToast}
+          onDuplicar={perms && perms.generar ? (d) => { setBaseGen({ doc: d, key: d.id + ":" + Date.now() }); setTab("nuevo"); } : null} onSign={(d, ro) => setSigning({ doc: d, readOnly: !!ro })} />
       )}
       {tabActual === "nuevo" && (
-        <Generator onSent={(doc, res) => {
+        <Generator base={baseGen} onSent={(doc, res) => {
+          setBaseGen(null);
           setRefreshKey((k) => k + 1); setTab("docs");
-          setToast(res && res.ok === false
+          setToast(res && res.programado
+            ? (res.ok ? doc.folio + " · envío programado para el " + res.etiqueta + "." : doc.folio + " quedó guardado, pero no se pudo programar el envío. Ábrelo y usa Enviar ahora.")
+            : res && res.ok === false
             ? doc.folio + " quedó guardado, pero el correo NO salió para " + (res.fallidos || []).join(", ") + ". Ábrelo y usa Reenviar."
             : "Contrato enviado a " + ((res && res.enviados) || []).join(", ") + " · " + doc.folio);
         }} />

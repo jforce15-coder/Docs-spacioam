@@ -25,7 +25,9 @@ var PROPS_DEFAULT = {
   FOLDER_ID:  '1GzxF5El3YaT0UVZLMBeRIfwXgzZxyqSa',
   FROM_EMAIL: 'hola@spacioam.com',
   FROM_NAME:  'Spacio AM',
-  OWNER:      'jovalle@spacioam.com'
+  OWNER:      'jovalle@spacioam.com',
+  /* Hoja de la EPI App (Config → props): de ahí sale la lista de propiedades. */
+  EPI_SHEET_ID: '1-SfKC-evkK24qfOrrvIrcDs6ckGAmRzSLS_IYB8cYZg'
 };
 
 function P_(clave) {
@@ -41,7 +43,8 @@ var HOJAS = {
                'Origen','Huella del documento','Firma guardada'],
   DOCUMENTOS: ['id','folio','actualizado','estado','json'],
   PERMISOS:   ['Correo','Generar','Firmar','Administrar','Actualizado'],
-  FIRMAS_GUARDADAS: ['Correo','Nombre','Actualizado','Imagen (dataURL)']
+  FIRMAS_GUARDADAS: ['Correo','Nombre','Actualizado','Imagen (dataURL)'],
+  PROGRAMADOS: ['id','docId','Folio','Para','Sale (Guatemala)','Sale UTC','Estado','Enviado','Error','payload']
 };
 
 /* ─── Instalación ─────────────────────────────────────────────── */
@@ -58,6 +61,8 @@ function instalar() {
 
   Object.keys(HOJAS).forEach(function (n) { hoja_(n); });
   DriveApp.getFolderById(P_('FOLDER_ID'));           // fuerza el permiso de Drive
+
+  asegurarActivador_();
 
   var hp = hoja_('PERMISOS');
   if (!buscarFila_(hp, 1, P_('OWNER'))) {
@@ -177,6 +182,9 @@ function doPost(e) {
       case 'archivarPDF':     return json_(archivarPDF_(p));
       case 'permisos':        return json_(permisos_(p));
       case 'firmaGuardada':   return json_(firmaGuardada_(p));
+      case 'programarCorreo': return json_(programarCorreo_(p));
+      case 'cancelarProgramado': return json_(cancelarProgramado_(p.docId));
+      case 'propiedades':     return json_(propiedades_());
       default:                return json_({ ok: false, error: 'accion_desconocida: ' + p.action });
     }
   } catch (err) {
@@ -426,4 +434,126 @@ function firmaGuardada_(p) {
     });
   }
   return { ok: true, firmas: todas };
+}
+
+
+/* ─── Envíos programados ─────────────────────────────────────── *
+ * El web app arma cada correo (asunto + HTML) y lo deja aquí con su hora
+ * en UTC. El activador enviarProgramados corre cada 5 minutos, manda los
+ * que ya tocan y actualiza el documento en DOCUMENTOS y CONTRATOS.
+ * Guatemala es UTC−6 sin horario de verano: 7:00 GT = 13:00 UTC.
+ */
+
+var PROG_COL = 10;   /* primera columna del payload (se reparte en trozos) */
+
+function asegurarActivador_() {
+  var existe = ScriptApp.getProjectTriggers().some(function (t) { return t.getHandlerFunction() === 'enviarProgramados'; });
+  if (!existe) ScriptApp.newTrigger('enviarProgramados').timeBased().everyMinutes(5).create();
+}
+
+function programarCorreo_(p) {
+  if (!p.docId || !p.sendAt || !(p.envios || []).length) return { ok: false, error: 'faltan_datos' };
+  var cuando = new Date(p.sendAt);
+  if (isNaN(cuando.getTime())) return { ok: false, error: 'fecha_invalida' };
+  try { asegurarActivador_(); } catch (e) { return { ok: false, error: 'sin_activador: ' + e }; }
+
+  cancelarProgramado_(p.docId);   /* reprogramar reemplaza, no duplica */
+  var h = hoja_('PROGRAMADOS');
+  var ids = [];
+  p.envios.forEach(function (env, i) {
+    var partes = trozos_(JSON.stringify(env));
+    var necesarias = PROG_COL - 1 + partes.length;
+    if (h.getMaxColumns() < necesarias) h.insertColumnsAfter(h.getMaxColumns(), necesarias - h.getMaxColumns());
+    var id = p.docId + '_' + Date.now() + '_' + i;
+    h.appendRow([id, p.docId, p.folio || '', env.to, p.etiqueta || '', cuando.toISOString(), 'pendiente', '', ''].concat(partes));
+    ids.push(id);
+  });
+  SpreadsheetApp.flush();
+  return { ok: true, ids: ids, sale: cuando.toISOString() };
+}
+
+function cancelarProgramado_(docId) {
+  var h = hoja_('PROGRAMADOS');
+  if (h.getLastRow() < 2) return { ok: true, cancelados: 0 };
+  var vals = h.getRange(2, 1, h.getLastRow() - 1, 7).getValues();
+  var n = 0;
+  for (var i = 0; i < vals.length; i++) {
+    if (String(vals[i][1]) === String(docId) && vals[i][6] === 'pendiente') {
+      h.getRange(i + 2, 7).setValue('cancelado'); n++;
+    }
+  }
+  return { ok: true, cancelados: n };
+}
+
+/** Lo corre el activador cada 5 minutos. */
+function enviarProgramados() {
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(10000)) return;
+  try {
+    var h = hoja_('PROGRAMADOS');
+    if (h.getLastRow() < 2) return;
+    var ancho = h.getMaxColumns();
+    var filas = h.getRange(2, 1, h.getLastRow() - 1, ancho).getValues();
+    var ahora = new Date();
+    var porDoc = {};
+    filas.forEach(function (f, i) {
+      if (f[6] !== 'pendiente' || new Date(f[5]) > ahora) return;
+      var r = i + 2, docId = String(f[1]);
+      var doc = getDoc_(docId);
+      if (doc && (doc.estado === 'cancelado' || doc.estado === 'anulado')) { h.getRange(r, 7).setValue('cancelado'); return; }
+      var res;
+      try { res = enviarCorreo_(JSON.parse(f.slice(PROG_COL - 1).join(''))); }
+      catch (e) { res = { ok: false, error: String(e) }; }
+      h.getRange(r, 7, 1, 3).setValues([[res.ok ? 'enviado' : 'error', res.ok ? new Date() : '', res.ok ? '' : res.error]]);
+      (porDoc[docId] = porDoc[docId] || { ok: [], mal: [], err: '' });
+      if (res.ok) porDoc[docId].ok.push(f[3]); else { porDoc[docId].mal.push(f[3]); porDoc[docId].err = res.error; }
+    });
+    Object.keys(porDoc).forEach(function (docId) { marcarEnviado_(docId, porDoc[docId]); });
+  } finally { lock.releaseLock(); }
+}
+
+/* El documento pasa de "programado" a "enviado" en las dos hojas. */
+function marcarEnviado_(docId, r) {
+  var d = getDoc_(docId);
+  if (!d) return;
+  var ts = new Date().toISOString();
+  if (d.estado === 'programado') d.estado = 'enviado';
+  d.enviado = ts;
+  d.programado = d.programado || {};
+  d.programado.salio = ts;
+  d.correoFirma = { ts: ts, enviados: r.ok, fallidos: r.mal, error: r.err || '' };
+  d.historial = (d.historial || []).concat([{ ts: ts, texto: r.mal.length
+    ? 'Envío programado: el correo NO salió para ' + r.mal.join(', ') + '. Usa Reenviar.'
+    : 'Envío programado: correo de firma enviado a ' + r.ok.join(', ') + '.' }]);
+  guardarDoc_({ doc: d });
+
+  var hc = hoja_('CONTRATOS');
+  var fila = buscarFila_(hc, 1, d.folio);
+  if (fila) {
+    hc.getRange(fila, 2).setValue(Utilities.formatDate(new Date(), 'America/Guatemala', 'd MMM yyyy, HH:mm'));
+    hc.getRange(fila, 8).setValue('Enviado a firma');
+  }
+}
+
+/* ─── Propiedades de EPI ─────────────────────────────────────── *
+ * Se leen de la hoja de la EPI App (Config → fila "props"), la misma lista
+ * que EPI sincroniza con Hospitable. Caché de 6 horas.
+ */
+function propiedades_() {
+  var cache = CacheService.getScriptCache();
+  var hit = cache.get('props_epi');
+  if (hit) return { ok: true, propiedades: JSON.parse(hit), cache: true };
+  var h = SpreadsheetApp.openById(P_('EPI_SHEET_ID')).getSheetByName('Config');
+  if (!h) return { ok: false, error: 'sin_config_epi' };
+  var vals = h.getDataRange().getValues(), props = [];
+  for (var i = 0; i < vals.length; i++) {
+    if (String(vals[i][0]) !== 'props') continue;
+    try { props = JSON.parse(String(vals[i][1] || '[]')); } catch (e) { props = []; }
+    break;
+  }
+  var out = (props || []).filter(function (p) { return p && p.name; }).map(function (p) {
+    return { id: String(p.id || p.hospId || p.name), name: String(p.name), address: String(p.address || '') };
+  }).sort(function (a, b) { return a.name.localeCompare(b.name, 'es'); });
+  try { cache.put('props_epi', JSON.stringify(out), 21600); } catch (e) {}
+  return { ok: true, propiedades: out };
 }
