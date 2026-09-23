@@ -1,6 +1,6 @@
 # Subir a producción — 23 sep 2026
 
-Solo los 6 archivos que difieren de lo que hay hoy en el repo Docs-spacioam (main).
+Solo los 7 archivos que difieren de lo que hay hoy en el repo Docs-spacioam (main).
 Súbelos a la raíz (reemplazan los actuales). No requiere cambios en Apps Script.
 
 - index.html           → versiones nuevas (?v=) para que el navegador no use copias viejas
@@ -9,5 +9,6 @@ Súbelos a la raíz (reemplazan los actuales). No requiere cambios en Apps Scrip
 - styles.css           → estilos de fecha, espacios y nombre en una línea
 - esign.jsx            → firma nítida; PDF firmado + certificado a mayor resolución
 - docx-export.jsx      → saltos y espacios también en el .docx
+- admin.jsx            → la sesión queda guardada 180 días (se renueva en cada visita) aunque cierres la página o el navegador; solo "Cerrar sesión" la borra
 
 Después: recarga con Cmd+Shift+R y vuelve a guardar tu firma una vez (la guardada es de baja calidad).

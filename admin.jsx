@@ -764,9 +764,22 @@ function signLink(doc) {
 }
 
 /* ─── Shell ───────────────────────────────────────────────── */
+const SESION_KEY = "spacio_admin_sesion_v1";
+const SESION_DIAS = 180;
+
 function AdminApp() {
+  /* La sesión vive en localStorage (no en sessionStorage): sobrevive a
+     cerrar la pestaña o el navegador. Dura 180 días y se renueva en cada
+     visita, así que mientras entres de vez en cuando no vuelve a pedir login.
+     Solo se borra con "Cerrar sesión". */
   const [user, setUser] = useS(() => {
-    try { return JSON.parse(sessionStorage.getItem("spacio_admin_user") || "null"); } catch (e) { return null; }
+    try {
+      const raw = localStorage.getItem(SESION_KEY) || sessionStorage.getItem("spacio_admin_user");
+      if (!raw) return null;
+      const v = JSON.parse(raw);
+      if (v && v.user) return v.exp && v.exp < Date.now() ? null : v.user;
+      return v; // formato anterior (sessionStorage): el usuario directo
+    } catch (e) { return null; }
   });
   const [tab, setTab] = useS("docs");
   /* Documento que se abre en el generador como base (Duplicar). */
@@ -855,8 +868,9 @@ function AdminApp() {
 
   useE(() => {
     try {
-      if (user) sessionStorage.setItem("spacio_admin_user", JSON.stringify(user));
-      else sessionStorage.removeItem("spacio_admin_user");
+      if (user) localStorage.setItem(SESION_KEY, JSON.stringify({ user: user, exp: Date.now() + SESION_DIAS * 86400000 }));
+      else localStorage.removeItem(SESION_KEY);
+      sessionStorage.removeItem("spacio_admin_user");
     } catch (e) {}
   }, [user]);
 
