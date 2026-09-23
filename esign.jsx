@@ -644,7 +644,7 @@ async function downloadSignedPdf(doc, onStatus) {
         <FirmasCtx.Provider value={firmasDe(doc)}>
           <ContractDoc tipo={doc.tipo} data={doc.data} custom={doc.custom} edits={doc.edits} />
         </FirmasCtx.Provider>
-        <CertificadoSheet doc={doc} />
+        {window.Docs.soloSpacio && window.Docs.soloSpacio(doc) ? null : <CertificadoSheet doc={doc} />}
       </div>
     );
     await new Promise((r) => setTimeout(r, 700));
@@ -665,7 +665,8 @@ async function downloadSignedPdf(doc, onStatus) {
       pdf.addImage(canvas.toDataURL("image/jpeg", 0.95), "JPEG", 0, 0, PAGE_W, PAGE_H, undefined, "FAST");
     }
     const nm = (doc.firmanteNombre || "Sin nombre").split(/\s+/).slice(0, 3).join(" ");
-    pdf.save(`${doc.tipoLabel} FIRMADO - ${nm} (${doc.folio}).pdf`);
+    if (window.Docs.soloSpacio && window.Docs.soloSpacio(doc)) pdf.save(`${window.Docs.titulo(doc)} (${doc.folio}).pdf`);
+    else pdf.save(`${doc.tipoLabel} FIRMADO - ${nm} (${doc.folio}).pdf`);
     say("");
   } finally {
     setTimeout(() => { root.unmount(); host.remove(); }, 60);

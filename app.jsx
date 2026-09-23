@@ -206,6 +206,7 @@ const TIPO_OPCIONES = [
   { value: "emp_goce", label: "Constancia de vacaciones", sub: "Empleados" },
   { value: "emp_bono_estrella", label: "Bono Estrella", sub: "Empleados" },
   { value: "emp_adelanto", label: "Adelanto de pago", sub: "Empleados" },
+  { value: "carta", label: "Carta", sub: "Cartas · firma solo Spacio AM" },
 ];
 
 function SectionsEditor({ edits }) {
@@ -249,6 +250,7 @@ function Generator({ onSent, base }) {
   const [baseDoc, setBaseDoc] = useState(null);
   const [sendOpen, setSendOpen] = useState(false);
   const [datosOpen, setDatosOpen] = useState(false);
+  const [cartaOpen, setCartaOpen] = useState(false);
   const chPlazo = tipo.endsWith("_lt") ? "largo" : "corto";
   const setPlazo = (p) => {
     const ind = tipo.indexOf("cohosting_individual") === 0;
@@ -275,6 +277,7 @@ function Generator({ onSent, base }) {
       ...SPACIO_DEFAULTS,
       ...COHOSTING_DEFAULTS,
       ...EMPLEADO_DEFAULTS,
+      ...(window.CARTA_DEFAULTS || {}),
       empFechaInicio: todayISO(),
       empFechaEfectiva: todayISO(),
       prestadorNombre: "",
@@ -291,8 +294,11 @@ function Generator({ onSent, base }) {
   const isIndividual = tipo.indexOf("cohosting_individual") === 0;
   const isServicios = tipo === "limpieza" || tipo === "mantenimiento" || tipo === "personalizado";
   const isEmpleado = tipo.startsWith("emp_");
+  const isCarta = tipo === "carta";
 
-  const canGenerate = isEmpleado
+  const canGenerate = isCarta
+    ? !!(String(data.cartaTitulo || "").trim() && String(data.cartaCuerpo || "").trim() && String(data.cartaFirmaNombre || "").trim())
+    : isEmpleado
     ? !!data.empNombre
     : isServicios
     ? !!(data.prestadorNombre && data.prestadorDPI)
@@ -332,7 +338,7 @@ function Generator({ onSent, base }) {
     let restored = {};
     try { restored = JSON.parse(localStorage.getItem(LS_KEY) || "{}"); } catch (e) {}
     return {
-      ...SPACIO_DEFAULTS, ...COHOSTING_DEFAULTS, ...EMPLEADO_DEFAULTS,
+      ...SPACIO_DEFAULTS, ...COHOSTING_DEFAULTS, ...EMPLEADO_DEFAULTS, ...(window.CARTA_DEFAULTS || {}),
       empFechaInicio: todayISO(), empFechaEfectiva: todayISO(),
       prestadorNombre: "", prestadorDPI: "",
       pagoMonto: t === "limpieza" ? "75.00" : "100.00",
@@ -558,6 +564,7 @@ function Generator({ onSent, base }) {
   };
 
   const buildFilename = (ext = "pdf") => {
+    if (isCarta) return `${(data.cartaTitulo || "Carta").trim()}.${ext}`;
     const tipoLabel = tipo === "limpieza" ? "Limpieza"
       : tipo === "mantenimiento" ? "Mantenimiento"
       : tipo === "cohosting_individual" ? "Co-hosting Individual"
@@ -670,7 +677,7 @@ function Generator({ onSent, base }) {
         </div>
 
         {/* ─── DPI Upload ─── */}
-        <div className="section">
+        {!isCarta && <div className="section">
           <div className="section-label"><span className="num">02</span> Documento de identidad</div>
           <DPIDrop fileUrl={dpiUrl} onFile={handleDPIFile} onRemove={removeDPI} />
           {ocrStatus && (
@@ -681,7 +688,57 @@ function Generator({ onSent, base }) {
               </span>
             </div>
           )}
+        </div>}
+
+        {/* ─── Carta ─── */}
+        {isCarta && (
+        <>
+        <div className="section">
+          <div className="section-label"><span className="num">02</span> Carta</div>
+          <div className="field">
+            <label>Título de la carta</label>
+            <input value={data.cartaTitulo} maxLength={120} placeholder="Carta de recomendación" onChange={(e) => set("cartaTitulo", e.target.value)} />
+            <div className="footnote">Es el asunto, el nombre en Documentos y el nombre del PDF.</div>
+          </div>
+          <div className="field">
+            <label>Fecha</label>
+            <input type="date" value={data.fecha} onChange={(e) => set("fecha", e.target.value)} />
+          </div>
+          <div className="field">
+            <label>A la atención de</label>
+            <textarea rows={2} value={data.cartaAtencion} placeholder={"Administración\nCondominio Serena de Arrazola"} onChange={(e) => set("cartaAtencion", e.target.value)} />
+            <div className="footnote">Una línea por renglón.</div>
+          </div>
+          <div className="field">
+            <label>Saludo</label>
+            <input value={data.cartaSaludo} placeholder="Estimados señores:" onChange={(e) => set("cartaSaludo", e.target.value)} />
+          </div>
+          <div className="field">
+            <label>Cuerpo</label>
+            <textarea rows={10} value={data.cartaCuerpo} onChange={(e) => set("cartaCuerpo", e.target.value)} />
+            <div className="footnote">Deja una línea en blanco entre párrafos. Usa **texto** para negritas.</div>
+          </div>
+          <div className="field">
+            <label>Despedida</label>
+            <input value={data.cartaDespedida} placeholder="Atentamente," onChange={(e) => set("cartaDespedida", e.target.value)} />
+          </div>
         </div>
+        <details className="section">
+          <summary><span className="num">03</span> Firma de Spacio AM</summary>
+          <div className="field"><label>Nombre</label>
+            <input value={data.cartaFirmaNombre} onChange={(e) => set("cartaFirmaNombre", e.target.value)} /></div>
+          <div className="field"><label>Cargo</label>
+            <input value={data.cartaFirmaCargo} onChange={(e) => set("cartaFirmaCargo", e.target.value)} /></div>
+          <div className="field-row">
+            <div className="field"><label>Teléfono</label>
+              <input value={data.cartaFirmaTel} onChange={(e) => set("cartaFirmaTel", e.target.value)} /></div>
+            <div className="field"><label>Correo</label>
+              <input value={data.cartaFirmaCorreo} type="email" autoCapitalize="none" onChange={(e) => set("cartaFirmaCorreo", e.target.value)} /></div>
+          </div>
+          <div className="footnote">La carta la firma solo Spacio AM. Deja teléfono o correo vacíos para no mostrarlos.</div>
+        </details>
+        </>
+        )}
 
         {/* ─── Prestador form (servicios) ─── */}
         {isServicios && (
@@ -878,7 +935,7 @@ function Generator({ onSent, base }) {
         )}
 
         {/* ─── Contract details ─── */}
-        <div className="section">
+        {!isCarta && <div className="section">
           <div className="section-label">
             <span className="num">{(isServicios || isEmpleado) ? "04" : isJuridica ? "06" : "05"}</span> Detalles del contrato
           </div>
@@ -1023,13 +1080,13 @@ function Generator({ onSent, base }) {
               </div>
             </>
           )}
-        </div>
+        </div>}
 
         {/* ─── Secciones editables ─── */}
         <SectionsEditor edits={editsForTipo} />
 
         {/* ─── Spacio AM (rarely changes) ─── */}
-        <details className="section" style={{ marginTop: 22 }}>
+        {!isCarta && <details className="section" style={{ marginTop: 22 }}>
           <summary>
             <span className="num">{(isServicios || isEmpleado) ? "05" : isJuridica ? "07" : "06"}</span> Datos de Spacio AM
           </summary>
@@ -1104,16 +1161,16 @@ function Generator({ onSent, base }) {
               </div>
             </>
           )}
-        </details>
+        </details>}
 
         {/* ─── Enviar / generar ─── */}
         <button
           className="btn-primary"
           disabled={generating || generatingDocx || !canGenerate}
-          onClick={() => setSendOpen(true)}
+          onClick={() => (isCarta ? setCartaOpen(true) : setSendOpen(true))}
         >
           <Star size={11} color="currentColor" />
-          Enviar para firma
+          {isCarta ? "Firmar carta" : "Enviar para firma"}
         </button>
         <button
           className="btn-secondary"
@@ -1131,15 +1188,22 @@ function Generator({ onSent, base }) {
           {generatingDocx ? "Generando…" : "Google Docs (.docx)"}
         </button>
 
-        <button
+        {!isCarta && <button
           className="btn-secondary"
           disabled={generating || generatingDocx}
           onClick={() => setDatosOpen(true)}
           title="Envía un correo pidiendo los datos que faltan para redactar el documento."
         >
           Pedir datos
-        </button>
+        </button>}
 
+        {isCarta ? (
+        <div className="footnote">
+          La carta la firma solo Spacio AM: al firmar queda registrada en Documentos
+          y se descarga el PDF, listo para entregar. Puedes editar el texto
+          directamente sobre la hoja.
+        </div>
+        ) : (
         <div className="footnote">
           La opción principal envía el contrato por correo para revisión y firma
           electrónica; el PDF y el .docx quedan disponibles para uso interno.
@@ -1147,6 +1211,7 @@ function Generator({ onSent, base }) {
           texto directamente sobre el documento antes de generarlo. Las áreas
           con tinte ámbar son editables. El PDF se descarga con la fecha del día.
         </div>
+        )}
       </aside>
 
       {/* ─── Viewer ─── */}
@@ -1176,6 +1241,12 @@ function Generator({ onSent, base }) {
         onClose={() => setSendOpen(false)}
         onSent={(doc, res) => { setSendOpen(false); if (onSent) onSent(doc, res); else setToast(res && res.programado ? (res.ok ? "Envío programado para el " + res.etiqueta + "." : "No se pudo programar el envío. Ábrelo en Documentos y usa Enviar ahora.") : res && res.ok === false ? "El correo NO salió para " + (res.fallidos || []).join(", ") + ". Ábrelo en Documentos y usa Reenviar." : "Correo de firma enviado a " + ((res && res.enviados) || []).join(", ")); }}
       />
+
+      {window.CartaSignModal && (
+        <window.CartaSignModal open={cartaOpen} data={data} edits={editsForTipo}
+          onClose={() => setCartaOpen(false)}
+          onDone={(doc, res) => { setCartaOpen(false); if (onSent) onSent(doc, res); else setToast("Carta firmada por Spacio AM · " + doc.folio + ". El PDF se descargó."); }} />
+      )}
 
       <DataRequestModal
         open={datosOpen}

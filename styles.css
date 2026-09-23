@@ -1067,3 +1067,6 @@ details[open] summary { color: var(--ink); }
   .panel { padding: 22px 14px 28px; }
   .btn-primary, .btn-secondary { width: 100%; }
 }
+
+/* Cartas: datos de contacto bajo el cargo del firmante */
+.blk-sig .s-extra { font-family: var(--sans); font-weight: 500; font-size: 13px; letter-spacing: 0.04em; color: var(--ink); line-height: 1.6; }

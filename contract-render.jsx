@@ -15,6 +15,7 @@ function ContractDoc({ tipo, data, custom, edits, onEdit, onReset, setCustom }) 
       {tipo === "cohosting_juridica" && <ContratoCohostingJuridica data={data} edits={e} onEdit={onEdit} onReset={onReset} />}
       {tipo === "cohosting_juridica_lt" && <ContratoCohostingJuridicaLT data={data} edits={e} onEdit={onEdit} onReset={onReset} />}
       {isEmpleado && <ContratoEmpleado key={tipo} tipo={tipo} data={data} edits={e} onEdit={onEdit} onReset={onReset} />}
+      {tipo === "carta" && <ContratoCarta tipo={tipo} data={data} edits={e} onEdit={onEdit} onReset={onReset} />}
       {tipo === "personalizado" && (
         <ContratoPersonalizado data={data} custom={custom || CUSTOM_DEFAULT} setCustom={setCustom || (() => {})} />
       )}

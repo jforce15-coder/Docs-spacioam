@@ -34,12 +34,14 @@
     emp_goce: "Constancia de vacaciones",
     emp_bono_estrella: "Bono Estrella",
     emp_adelanto: "Solicitud y recibo de adelanto de pago",
+    carta: "Carta",
   };
 
   var CATEGORIA = function (tipo) {
     if (!tipo) return "—";
     if (tipo.indexOf("cohosting") === 0) return "Co-hosting";
     if (tipo.indexOf("emp_") === 0) return "Empleados";
+    if (tipo === "carta") return "Cartas";
     return "Servicios";
   };
 
@@ -103,14 +105,15 @@
       .map(function (f, i) { return { id: "f" + (i + 1), nombre: f.nombre, email: String(f.email).toLowerCase(), firma: null }; });
     var doc = {
       soloFirmante: !!SOLO_FIRMANTE[payload.tipo],
+      soloSpacio: !!SOLO_SPACIO[payload.tipo],
       id: "d" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       folio: folio,
       tipo: payload.tipo,
       tipoLabel: TIPO_LABEL[payload.tipo] || "Documento",
       categoria: CATEGORIA(payload.tipo),
       firmantes: fs,
-      firmanteNombre: fs[0] ? fs[0].nombre : "",
-      firmanteEmail: fs[0] ? fs[0].email : "",
+      firmanteNombre: fs[0] ? fs[0].nombre : (payload.firmanteNombre || ""),
+      firmanteEmail: fs[0] ? fs[0].email : (payload.firmanteEmail || ""),
       proyectoId: payload.proyectoId || "",
       proyectoNombre: payload.proyectoNombre || "",
       propiedad: payload.propiedad || "",
@@ -134,7 +137,8 @@
       historial: [],
     };
     log(doc, "Documento generado por Administración");
-    if (payload.programado) log(doc, "Envío programado para el " + payload.programado.etiqueta + " a " + fs.map(function (f) { return f.email; }).join(" y "));
+    if (SOLO_SPACIO[payload.tipo]) { /* sin firmantes externos: no hay solicitud de firma */ }
+    else if (payload.programado) log(doc, "Envío programado para el " + payload.programado.etiqueta + " a " + fs.map(function (f) { return f.email; }).join(" y "));
     else log(doc, "Solicitud de firma enviada a " + fs.map(function (f) { return f.email; }).join(" y "));
     write(read().concat([doc]));
     emit();
@@ -189,6 +193,14 @@
      empresa recibe. Sin esto quedaban atorados en "firmado por 1 parte"
      esperando una contrafirma que el documento no tiene. */
   var SOLO_FIRMANTE = { emp_adelanto: 1 };
+  /* Documentos que firma ÚNICAMENTE Spacio AM (cartas): no llevan
+     firmantes externos; se cierran con la firma de Spacio AM. */
+  var SOLO_SPACIO = { carta: 1 };
+  function soloSpacio(d) {
+    if (!d) return false;
+    if (d.soloSpacio != null) return !!d.soloSpacio;
+    return !!SOLO_SPACIO[d.tipo];
+  }
   function soloFirmante(d) {
     if (!d) return false;
     if (d.soloFirmante != null) return !!d.soloFirmante;
@@ -226,7 +238,7 @@
     d.estado = "firmado";
     d.certificado = "SAM-FE-" + d.folio.replace("SAM-", "") + "-" +
       hash(d.folio + d.firmanteEmail + ((d.firmantes || [])[0] && (d.firmantes || [])[0].firma ? d.firmantes[0].firma.ts : "")).slice(0, 4);
-    return log(d, soloFirmante(d) ? "Copia firmada enviada al firmante" : "Copia firmada enviada a ambas partes");
+    return log(d, soloSpacio(d) ? "Carta firmada por Spacio AM" : soloFirmante(d) ? "Copia firmada enviada al firmante" : "Copia firmada enviada a ambas partes");
   }
 
   /* Firma por parte de Spacio AM → puede ir antes o después. */
@@ -352,7 +364,7 @@
     onChange: onChange, emit: emit, replaceAll: replaceAll, upsert: upsert,
     ESTADOS: ESTADOS, TIPO_LABEL: TIPO_LABEL, CATEGORIA: CATEGORIA,
     all: all, get: get, create: create, update: update, remove: remove, resend: resend,
-    soloFirmante: soloFirmante, SOLO_FIRMANTE: SOLO_FIRMANTE,
+    soloFirmante: soloFirmante, SOLO_FIRMANTE: SOLO_FIRMANTE, soloSpacio: soloSpacio, SOLO_SPACIO: SOLO_SPACIO,
     titulo: titulo, rename: rename, setPropiedad: setPropiedad, log: log,
     markVisto: markVisto, signFirmante: signFirmante, signSpacio: signSpacio, faltanFirmas: faltanFirmas,
     cancel: cancel, voidDoc: voidDoc,

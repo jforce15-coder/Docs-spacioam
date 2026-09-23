@@ -136,7 +136,7 @@ function normNombre(s) {
 }
 
 function buildSigRows(parties, firmas) {
-  const base = parties.map((p) => ({ name: p.name, role: p.role, img: null }));
+  const base = parties.map((p) => ({ name: p.name, role: p.role, extra: p.extra || null, img: null }));
   if (!firmas) return base;
   const signers = (firmas.signers || []).slice();
   const spacio = firmas.spacio || null;
@@ -220,6 +220,7 @@ function Block({ b, editable, onEdit }) {
               <div className="s-rule" />
               <div className="s-name">{parseRich(p.name)}</div>
               <div className="s-role">{p.role}</div>
+              {(p.extra || []).map((l, j) => <div className="s-extra" key={j}>{l}</div>)}
             </div>
           ))}
         </div>
@@ -346,7 +347,7 @@ function PaginatedContract({ contract, edits, onEdit, onReset }) {
     <div className="paginated-doc">
       {/* Hidden measurer — identical typography & column width */}
       <div className="measure-col" ref={measRef} aria-hidden="true">
-        <div ref={titleRef} className="sheet-title">{effective.title}</div>
+        {effective.title ? <div ref={titleRef} className="sheet-title">{effective.title}</div> : null}
         {blocks.map((b, i) => (
           <div data-blk key={i}><Block b={b} /></div>
         ))}
@@ -357,7 +358,7 @@ function PaginatedContract({ contract, edits, onEdit, onReset }) {
         <div className="sheet" key={p}>
           <img className="sheet-bg" src={MEMBRETE} alt="" crossOrigin="anonymous" />
           <div className="sheet-col">
-            {p === 0 && <div className="sheet-title">{effective.title}</div>}
+            {p === 0 && effective.title && <div className="sheet-title">{effective.title}</div>}
             {idxs.map((i) => (
               blocks[i] ? <Block key={i} b={blocks[i]} editable={editable} onEdit={openEditor} /> : null
             ))}

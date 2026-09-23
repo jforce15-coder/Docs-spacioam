@@ -662,6 +662,7 @@ function genericSignatureBlock(contract) {
       spacing: { after: 280 },
       children: [new TextRun({ text: (p.role || "").toUpperCase(), font: "Montserrat", size: 14, characterSpacing: 60, color: INK })],
     }));
+    (p.extra || []).forEach((l) => out.push(new Paragraph({ spacing: { after: 60 }, children: [new TextRun({ text: l, font: "Montserrat", size: 16, color: INK })] })));
   });
   return out;
 }
@@ -683,14 +684,15 @@ async function generateDocxBlob(tipo, data, custom, edits) {
     fetchAsArrayBuffer("assets/letterhead-cont.jpeg"),
   ]);
 
-  const isEmp = tipo && tipo.indexOf("emp_") === 0;
+  const BUILDER = (window.EMPLEADO_BUILDERS || {})[tipo] || (window.CARTA_BUILDERS || {})[tipo] || null;
+  const isEmp = !!BUILDER;
   const isCohostingDoc = tipo === "cohosting_individual" || tipo === "cohosting_juridica" || tipo === "cohosting_juridica_lt";
 
   // Title
   let title;
   if (isEmp) {
-    const built = window.EMPLEADO_BUILDERS[tipo] ? window.EMPLEADO_BUILDERS[tipo](data) : null;
-    title = built ? built.title : "Documento";
+    const built = BUILDER(data);
+    title = built.title || "";
   } else if (tipo === "limpieza") title = "Contrato de Prestación de Servicios de Limpieza";
   else if (tipo === "mantenimiento") title = "Contrato de Prestación de Servicios de Mantenimiento";
   else if (isCohostingDoc) title = "Acuerdo de co-hosting";
@@ -699,7 +701,7 @@ async function generateDocxBlob(tipo, data, custom, edits) {
   // Body content per tipo
   let body, sigBlock;
   if (isEmp) {
-    let contract = window.EMPLEADO_BUILDERS[tipo](data);
+    let contract = BUILDER(data);
     if (edits && window.applyEdits) contract = window.applyEdits(contract, edits);
     body = genericContent(contract);
     sigBlock = genericSignatureBlock(contract);

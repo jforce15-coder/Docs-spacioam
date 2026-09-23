@@ -32,7 +32,7 @@
     save: "Guardar", cancel: "Cancelar",
     est_borrador: "Borrador", est_programado: "Envío programado", est_enviado: "Enviado a firma", est_visto: "Visto por firmante",
     est_parcial: "Firmado por 1 parte", est_firmado: "Firmado", est_cancelado: "Cancelado", est_anulado: "Anulado",
-    cat_servicios: "Servicios", cat_cohosting: "Co-hosting", cat_empleados: "Empleados",
+    cat_servicios: "Servicios", cat_cohosting: "Co-hosting", cat_empleados: "Empleados", cat_cartas: "Cartas",
     row_sender_name: "Nombre visible", row_email: "Correo", row_reply: "Responder a",
     row_sheet: "Hoja", row_folder: "Carpeta", row_write: "Escritura",
     connected: "Conectada", not_connected: "Sin conectar",
@@ -84,7 +84,7 @@
     save: "Save", cancel: "Cancel",
     est_borrador: "Draft", est_programado: "Scheduled", est_enviado: "Sent for signature", est_visto: "Seen by signer",
     est_parcial: "Signed by 1 party", est_firmado: "Signed", est_cancelado: "Cancelled", est_anulado: "Voided",
-    cat_servicios: "Services", cat_cohosting: "Co-hosting", cat_empleados: "Employees",
+    cat_servicios: "Services", cat_cohosting: "Co-hosting", cat_empleados: "Employees", cat_cartas: "Letters",
     row_sender_name: "Display name", row_email: "Email", row_reply: "Reply-to",
     row_sheet: "Sheet", row_folder: "Folder", row_write: "Writing",
     connected: "Connected", not_connected: "Not connected",
@@ -110,7 +110,7 @@
     t: function (lang, k) { var d = lang === "en" ? EN : ES; return d[k] != null ? d[k] : (ES[k] != null ? ES[k] : k); },
     estado: function (lang, key) { return window.SpacioT.t(lang, "est_" + key); },
     categoria: function (lang, cat) {
-      var map = { "Servicios": "cat_servicios", "Co-hosting": "cat_cohosting", "Empleados": "cat_empleados" };
+      var map = { "Servicios": "cat_servicios", "Co-hosting": "cat_cohosting", "Empleados": "cat_empleados", "Cartas": "cat_cartas" };
       return map[cat] ? window.SpacioT.t(lang, map[cat]) : cat;
     },
   };

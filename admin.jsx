@@ -570,6 +570,7 @@ function DocsPanel({ onSign, onToast, onNuevo, onDuplicar, refreshKey, lang, use
             <option value="Servicios">{T("cat_servicios")}</option>
             <option value="Co-hosting">{T("cat_cohosting")}</option>
             <option value="Empleados">{T("cat_empleados")}</option>
+            <option value="Cartas">{T("cat_cartas")}</option>
           </select>
         </div>
       </div>
@@ -991,7 +992,9 @@ function AdminApp() {
         <Generator base={baseGen} onSent={(doc, res) => {
           setBaseGen(null);
           setRefreshKey((k) => k + 1); setTab("docs");
-          setToast(res && res.programado
+          setToast(res && res.carta
+            ? "Carta firmada por Spacio AM · " + doc.folio + ". El PDF se descargó."
+            : res && res.programado
             ? (res.ok ? doc.folio + " · envío programado para el " + res.etiqueta + "." : doc.folio + " quedó guardado, pero no se pudo programar el envío. Ábrelo y usa Enviar ahora.")
             : res && res.ok === false
             ? doc.folio + " quedó guardado, pero el correo NO salió para " + (res.fallidos || []).join(", ") + ". Ábrelo y usa Reenviar."
