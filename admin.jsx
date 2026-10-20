@@ -52,6 +52,18 @@ function AdminLogin({ onLogin, lang, setLang }) {
   const [needPass, setNeedPass] = useS(null);
 
   const enter = (perfil) => onLogin(perfil);
+  /* Sesión única desde el Hub: si hay sesión firmada (hub.spacioam.com/js/sa-sesion.js) y es válida, entra directo. */
+  const [sso, setSso] = useS(() => !!(window.SASesion && window.SASesion.leer()));
+  React.useEffect(() => {
+    if (!sso) return;
+    let vivo = true;
+    window.SASesion.verificar().then((p) => {
+      if (!vivo) return;
+      if (p && p.email) enter(perfilDe(p, String(p.email).toLowerCase()));
+      else setSso(false);
+    });
+    return () => { vivo = false; };
+  }, []);
   const perfilDe = (p, fallback) => ({
     name: (p && p.name) || fallback.split("@")[0].replace(/[._]/g, " ").toUpperCase(),
     email: (p && p.email) || fallback,
@@ -65,13 +77,15 @@ function AdminLogin({ onLogin, lang, setLang }) {
     const c = correo.trim().toLowerCase();
     if (!c || pass.length < 4) { setErr(true); return; }
     setBusy(true);
-    const local = () => { setBusy(false); enter(perfilDe(null, c)); };
-    if (!window.SAAuth) { setTimeout(local, 350); return; }
+    /* Antes, si el login fallaba (contraseña incorrecta, usuario inexistente o sin conexión) se entraba igual
+       con un perfil local: cualquier correo con cualquier contraseña abría el panel. Ahora un fallo es un error. */
+    const falla = () => { setErr(true); setBusy(false); };
+    if (!window.SAAuth) { falla(); return; }
     window.SAAuth.login(c, pass).then((r) => {
       if (r && r.ok && r.profile) { setBusy(false); enter(perfilDe(r.profile, c)); }
       else if (r && r.error === "needs_password" && r.profile) { setNeedPass(r.profile); setPass(""); setBusy(false); }
-      else local();
-    }).catch(local);
+      else falla();
+    }).catch(falla);
   };
 
   const createPass = (e) => {
@@ -84,6 +98,9 @@ function AdminLogin({ onLogin, lang, setLang }) {
     }).catch(() => { setErr(true); setBusy(false); });
   };
 
+  if (sso) return (
+    <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", fontFamily: "var(--sans, Montserrat, sans-serif)", fontSize: 11, letterSpacing: "0.28em", textTransform: "uppercase", color: "var(--fg-muted, #938B8A)" }}>Spacio AM</div>
+  );
   return (
     <div className="sa-login">
       <aside className="sa-login-aside">
