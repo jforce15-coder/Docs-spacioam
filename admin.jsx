@@ -56,6 +56,13 @@ function AdminLogin({ onLogin, lang, setLang }) {
   const [sso, setSso] = useS(() => !!(window.SASesion && window.SASesion.leer()));
   React.useEffect(() => {
     if (!sso) return;
+    // Entrada instantánea con el perfil de la sesión; la firma se comprueba en segundo plano.
+    const r = window.SASesion.perfilRapido && window.SASesion.perfilRapido();
+    if (r && r.email) {
+      enter(perfilDe(r, String(r.email).toLowerCase()));
+      window.SASesion.confirmar("", () => { try { localStorage.removeItem("spacio_admin_sesion_v1"); localStorage.removeItem("sa_session"); sessionStorage.removeItem("spacio_admin_user"); } catch (e) {} location.reload(); });
+      return;
+    }
     let vivo = true;
     window.SASesion.verificar().then((p) => {
       if (!vivo) return;
