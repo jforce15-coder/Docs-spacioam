@@ -166,6 +166,8 @@ function buscarFila_(h, col, valor) {
 function doPost(e) {
   var p = {};
   try { p = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (err) {}
+    var __diag = accesosDiag_(p); if (__diag) return __diag;   // fase 1b: resumen de accesos (robot)
+    var __ses = sesionDe_(p); registrarAcceso_(p.action, !!__ses);   // fase 1b: aún no bloquea
   if (!auth_(p)) return json_({ ok: false, error: 'token' });
 
   var lock = LockService.getScriptLock();
