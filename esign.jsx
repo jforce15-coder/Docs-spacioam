@@ -437,6 +437,41 @@ function SendModal({ open, tipo, data, custom, edits, sugerido, onClose, onSent 
   );
 }
 
+/* ─── Pedir datos: siempre con el formulario de Grow ───────
+   Antes este modal solo mostraba «enviado» y el correo que salía (desde otra versión) llevaba un enlace roto
+   (?firmar= sin documento): lo que llenaba el propietario no se guardaba en ningún lado. Ahora el enlace es el
+   formulario de Grow del proyecto elegido, que guarda los datos y el DPI dentro del proyecto. */
+const GROW_API = "https://script.google.com/macros/s/AKfycbxPYwdz0Q8za7_wZzX37QeqODoqwxOeoXZpeEWp94HKtHMqru12VPD4xt0cOtWHZA1LDQ/exec";
+function growPost(body) {
+  return fetch(GROW_API, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(body) })
+    .then((r) => r.json()).then((j) => { if (!j || !j.ok) throw new Error((j && j.error) || "grow"); return j.data; });
+}
+function growProyectos() {
+  return growPost({ action: "getStates", since: "" }).then((d) => (d.estados || []).filter((e) => /^p\d/.test(e.proyecto_id)).map((e) => {
+    let j = {}; try { j = JSON.parse(e.json || "{}"); } catch (x) {}
+    return { id: e.proyecto_id, version: e.version, json: j, nombre: j.nombre || e.proyecto_id, email: j.email || "", dueno: j.dueno || "", etapa: j.etapa || "" };
+  }).filter((p) => p.etapa !== "descartado").sort((a, b) => a.nombre.localeCompare(b.nombre)));
+}
+const b64u = (s) => btoa(unescape(encodeURIComponent(s))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+/* Deja el token del formulario en el proyecto (como hace Grow) y devuelve el enlace. */
+function growPrepararLink(p, nombre, correo) {
+  const guardar = (proy, n) => {
+    const j = Object.assign({}, proy.json);
+    if (!j.datosToken) j.datosToken = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+    j.datosSolicitado = new Date().toISOString();
+    return growPost({ action: "saveState", proyecto_id: proy.id, version: proy.version, json: JSON.stringify(j), por: "docs" }).then((r) => {
+      if (r && r.conflict && n < 3) { let jj = {}; try { jj = JSON.parse(r.json || "{}"); } catch (x) {} return guardar({ id: proy.id, version: r.version, json: jj }, n + 1); }
+      if (!r || !r.saved) throw new Error("no se pudo guardar en Grow");
+      return j;
+    });
+  };
+  return guardar(p, 0).then((j) => {
+    const nom = nombre || j.dueno || "";
+    const ctx = { p: j.nombre || "", n: nom.split(/\s+/)[0] || "", nc: nom, e: correo || j.email || "", d: j.direccion || "", ed: j.edificio || "", a: j.apto || "", t: j.telefono || "", nit: j.nit || "" };
+    return "https://grow.spacioam.com/?datos=" + encodeURIComponent(p.id) + "&k=" + j.datosToken + "&c=" + b64u(JSON.stringify(ctx));
+  });
+}
+
 /* ─── Modal: pedir datos al propietario ────────────────── */
 function DataRequestModal({ open, tipo, sugerido, onClose, onSent }) {
   const CAMPOS = {
@@ -458,10 +493,39 @@ function DataRequestModal({ open, tipo, sugerido, onClose, onSent }) {
   const [correo, setCorreo] = React.useState("");
   const [sel, setSel] = React.useState(() => grupos.map(() => true));
   const [preview, setPreview] = React.useState(false);
-  React.useEffect(() => { if (open) { setNombre(sugerido || ""); setCorreo(""); setPreview(false); setSel(grupos.map(() => true)); } }, [open, sugerido]);
+  const [proys, setProys] = React.useState(null);
+  const [proyId, setProyId] = React.useState("");
+  const [enviando, setEnviando] = React.useState(false);
+  const [error, setError] = React.useState("");
+  React.useEffect(() => {
+    if (!open) return;
+    setNombre(sugerido || ""); setCorreo(""); setPreview(false); setSel(grupos.map(() => true)); setError(""); setEnviando(false); setProyId("");
+    setProys(null); growProyectos().then(setProys).catch(() => setProys([]));
+  }, [open, sugerido]);
+  /* Elige solo el proyecto cuyo dueño coincide por correo o nombre. */
+  React.useEffect(() => {
+    if (!proys || proyId) return;
+    const c = correo.trim().toLowerCase(), n = nombre.trim().toLowerCase();
+    const hit = proys.find((p) => c && p.email.toLowerCase() === c) || proys.find((p) => n.length > 3 && p.dueno.toLowerCase() === n);
+    if (hit) setProyId(hit.id);
+  }, [proys, correo, nombre]);
   if (!open) return null;
 
-  const ready = nombre.trim().length > 3 && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(correo.trim());
+  const proy = (proys || []).find((p) => p.id === proyId) || null;
+  const ready = !!proy && nombre.trim().length > 3 && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(correo.trim());
+  const enviar = () => {
+    if (!proy || enviando) return;
+    setEnviando(true); setError("");
+    growPrepararLink(proy, nombre.trim(), correo.trim().toLowerCase()).then((link) => {
+      const m2 = M.build("solicitudDatos", { base: location.href.replace(/[^/]*$/, ""), nombre, correo, url: link,
+        documento: (window.Docs.TIPO_LABEL[tipo] || "documento").toLowerCase(), campos: grupos.filter((g, i) => sel[i]).map((g) => [g[0], g[1].join(", ")]) });
+      return window.SpacioSync.post({ action: "enviarCorreo", to: correo.trim().toLowerCase(), asunto: "Necesitamos unos datos para tu " + (window.Docs.TIPO_LABEL[tipo] || "documento").toLowerCase(), html: m2.html, texto: m2.text || "" });
+    }).then((r) => {
+      setEnviando(false);
+      if (!r || !r.ok) { setError("No se pudo enviar el correo" + (r && r.error ? " (" + r.error + ")" : "") + ". Intenta de nuevo."); return; }
+      onSent(correo.trim().toLowerCase());
+    }).catch((e) => { setEnviando(false); setError("No se pudo preparar el formulario en Grow: " + ((e && e.message) || "error") + "."); });
+  };
   const M = window.SpacioEmails;
   const mail = M.build("solicitudDatos", {
     base: location.href.replace(/[^/]*$/, ""),
@@ -487,8 +551,9 @@ function DataRequestModal({ open, tipo, sugerido, onClose, onSent }) {
           {preview ? (
             <>
               <div className="sa-mail-frame"><iframe title="Solicitud de datos" srcDoc={mail.html} /></div>
+              {error ? <div className="sa-note" style={{ color: "#B54D36" }}>{error}</div> : null}
               <div className="sa-actions">
-                <button className="sa-btn dark" onClick={() => { onSent(correo.trim().toLowerCase()); }}>Enviar solicitud</button>
+                <button className="sa-btn dark" disabled={enviando} onClick={enviar}>{enviando ? "Enviando…" : "Enviar solicitud"}</button>
                 <button className="sa-btn ghost" onClick={() => setPreview(false)}>Volver</button>
               </div>
             </>
@@ -497,6 +562,13 @@ function DataRequestModal({ open, tipo, sugerido, onClose, onSent }) {
               <label className="sa-field">
                 <span>Nombre</span>
                 <input value={nombre} placeholder="MARCEL REICHE" autoFocus onChange={(e) => setNombre(e.target.value.toUpperCase())} />
+              </label>
+              <label className="sa-field">
+                <span>Proyecto en Grow (ahí se guardan sus datos)</span>
+                <select value={proyId} onChange={(e) => setProyId(e.target.value)}>
+                  <option value="">{proys == null ? "Cargando proyectos…" : proys.length ? "Elige el proyecto" : "No se pudieron leer los proyectos de Grow"}</option>
+                  {(proys || []).map((p) => <option key={p.id} value={p.id}>{p.nombre}{p.dueno ? " · " + p.dueno : ""}</option>)}
+                </select>
               </label>
               <label className="sa-field">
                 <span>Correo electrónico</span>
@@ -513,7 +585,7 @@ function DataRequestModal({ open, tipo, sugerido, onClose, onSent }) {
                   ))}
                 </div>
               </div>
-              <div className="sa-note">Le enviamos un enlace para llenar sus datos y adjuntar la foto de su DPI; al recibirlos, generas el documento sin volver a escribir nada.</div>
+              <div className="sa-note">Le enviamos el formulario de Grow de ese proyecto para llenar sus datos y adjuntar la foto de su DPI. Al llenarlo, los ves en Grow → el proyecto → Contrato → «Ver los datos del cliente».</div>
               <div className="sa-actions">
                 <button className="sa-btn dark" disabled={!ready} onClick={() => setPreview(true)} style={{ flex: 1 }}>Ver el correo</button>
                 <button className="sa-btn ghost" onClick={onClose}>Cancelar</button>
