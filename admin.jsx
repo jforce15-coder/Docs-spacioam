@@ -796,7 +796,7 @@ const SESION_DIAS = 180;
    hub.spacioam.com/js/sa-nav.js, así cada mejora (y la navegación con el
    anillo) llega sola. Solo se carga para el equipo con sesión iniciada:
    nunca en el login ni en el enlace público de firma (?firmar=) que abren
-   los clientes. Después de sa-nav.js se carga alma-voz.js (Alma por voz al
+   los clientes. Después de sa-nav.js se cargan alma-client.js y alma-voz.js (Alma por voz al
    deslizar el botón hacia el centro); si falla, el menú funciona igual.
    Si sa-nav.js no carga, se queda la barra de pestañas propia de Docs. */
 const SANAV_HUB = "https://hub.spacioam.com/js/";
@@ -809,7 +809,11 @@ function cargarMenuCompartido() {
       s.src = src; s.async = false; s.onload = ok; s.onerror = ko;
       document.head.appendChild(s);
     });
+    /* alma-client.js define window.ALMA.vozWeb (la ficha de voz de Alma; la
+       sesión firmada de sa-sesion.js viaja sola en esa llamada). Si alguno de
+       los dos archivos de Alma falla, el menú se monta igual, sin voz. */
     sanavCarga = ld(SANAV_HUB + "sa-nav.js")
+      .then(() => ld(SANAV_HUB + "alma-client.js").catch(() => {}))
       .then(() => ld(SANAV_HUB + "alma-voz.js").catch(() => {}))
       .then(() => !!window.SANav)
       .catch(() => { sanavCarga = null; return false; });
@@ -842,7 +846,7 @@ function MenuCompartido({ tab, tabs, lang, onNavigate, onFallo }) {
     const c = {
       app: "docs", home: { k: "docs", l: T("nav_docs") }, items, current: tab, hidden: false,
       apps: null,                        /* apps permitidas: las lee de la sesión compartida */
-      alma: window.SAAlmaVoz || null,    /* deslizar el botón hacia el centro: Alma por voz (alma-voz.js) */
+      alma: window.SAAlmaVoz || null,    /* deslizar el botón hacia el centro: Alma por voz (alma-client.js + alma-voz.js) */
       onNavigate: (k) => navRef.current(k),
     };
     try {
