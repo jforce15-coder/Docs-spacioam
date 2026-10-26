@@ -791,6 +791,68 @@ function signLink(doc) {
 const SESION_KEY = "spacio_admin_sesion_v1";
 const SESION_DIAS = 180;
 
+/* ─── Menú compartido de Spacio AM (botón «roca») ─────────────
+   Es el mismo menú del Hub, Epi y The Gentle Stoic Parent: se carga desde
+   hub.spacioam.com/js/sa-nav.js, así cada mejora (y la navegación con el
+   anillo) llega sola. Solo se carga para el equipo con sesión iniciada:
+   nunca en el login ni en el enlace público de firma (?firmar=) que abren
+   los clientes. Después de sa-nav.js se carga alma-voz.js (Alma por voz al
+   deslizar el botón hacia el centro); si falla, el menú funciona igual.
+   Si sa-nav.js no carga, se queda la barra de pestañas propia de Docs. */
+const SANAV_HUB = "https://hub.spacioam.com/js/";
+let sanavCarga = null;
+function cargarMenuCompartido() {
+  if (window.SANav) return Promise.resolve(true);
+  if (!sanavCarga) {
+    const ld = (src) => new Promise((ok, ko) => {
+      const s = document.createElement("script");
+      s.src = src; s.async = false; s.onload = ok; s.onerror = ko;
+      document.head.appendChild(s);
+    });
+    sanavCarga = ld(SANAV_HUB + "sa-nav.js")
+      .then(() => ld(SANAV_HUB + "alma-voz.js").catch(() => {}))
+      .then(() => !!window.SANav)
+      .catch(() => { sanavCarga = null; return false; });
+  }
+  return sanavCarga;
+}
+/* Con sesión guardada (y fuera del enlace de firma) se adelanta la descarga
+   mientras React arranca. */
+(function () {
+  try {
+    if (new URLSearchParams(location.search).get("firmar")) return;
+    if (localStorage.getItem(SESION_KEY) || sessionStorage.getItem("spacio_admin_user")) cargarMenuCompartido();
+  } catch (e) {}
+})();
+
+/* Monta el menú con las pantallas de Docs: «Documentos» va al botón central
+   y el resto a la barra. Se actualiza en cada render (pantalla actual,
+   idioma, permisos) y se esconde al desmontarse (cerrar sesión, firmar). */
+const SANAV_ICONOS = { nuevo: "edit", correos: "chat", firma: "check", cuenta: "user" };
+function MenuCompartido({ tab, tabs, lang, onNavigate, onFallo }) {
+  const T = (k) => window.SpacioT.t(lang, k);
+  const navRef = useR(onNavigate); navRef.current = onNavigate;
+  const montado = useR(false);
+  useE(() => {
+    const N = window.SANav;
+    if (!N) return;
+    const items = tabs.filter((t) => t.id !== "docs")
+      .map((t) => ({ k: t.id, l: t.label, icon: SANAV_ICONOS[t.id] || "doc" }))
+      .concat([{ k: "cuenta", l: T("nav_account"), icon: "user" }]);
+    const c = {
+      app: "docs", home: { k: "docs", l: T("nav_docs") }, items, current: tab, hidden: false,
+      apps: null,                        /* apps permitidas: las lee de la sesión compartida */
+      alma: window.SAAlmaVoz || null,    /* deslizar el botón hacia el centro: Alma por voz (alma-voz.js) */
+      onNavigate: (k) => navRef.current(k),
+    };
+    try {
+      if (!montado.current) { montado.current = true; N.mount(c); } else N.update(c);
+    } catch (e) { onFallo && onFallo(); }
+  });
+  useE(() => () => { try { if (window.SANav) window.SANav.hide(true); } catch (e) {} }, []);
+  return null;
+}
+
 function AdminApp() {
   /* La sesión vive en localStorage (no en sessionStorage): sobrevive a
      cerrar la pestaña o el navegador. Dura 180 días y se renueva en cada
@@ -819,8 +881,17 @@ function AdminApp() {
   const [notiDismiss, setNotiDismiss] = useS(() => { try { return JSON.parse(localStorage.getItem("sam:contratosNotiDismiss") || "{}"); } catch (e) { return {}; } });
   const [notiSnooze, setNotiSnooze] = useS(() => { try { return JSON.parse(localStorage.getItem("sam:contratosNotiSnooze") || "{}"); } catch (e) { return {}; } });
   const T = (k) => window.SpacioT.t(lang, k);
+  /* Menú compartido listo (sa-nav.js cargado). Mientras no, la barra de pestañas propia. */
+  const [menuOk, setMenuOk] = useS(false);
 
   useE(() => { try { localStorage.setItem("spacio_contratos_lang", lang); } catch (e) {} }, [lang]);
+
+  useE(() => {
+    if (firmarId || !user || menuOk) return;
+    let vivo = true;
+    cargarMenuCompartido().then((ok) => { if (vivo && ok) setMenuOk(true); });
+    return () => { vivo = false; };
+  }, [user]);
 
   /* Registro compartido: al abrir se traen de la hoja los documentos
      generados en las dos apps (Grow y Docs), y se vuelve a traer cada vez
@@ -1004,22 +1075,27 @@ function AdminApp() {
   const notis = notiAll.filter((n) => !notiDismiss[n.id] && !(notiSnooze[n.id] && notiSnooze[n.id] > Date.now()));
 
   const tabActual = tabs.some((t) => t.id === tab) || ["cuenta", "setup", "db"].indexOf(tab) >= 0 ? tab : "docs";
+  const irA = (k) => { setTab(k); window.scrollTo({ top: 0, behavior: "smooth" }); };
   return (
-    <div>
+    <div style={menuOk ? { paddingBottom: 96 } : undefined}>
+      {menuOk && <MenuCompartido tab={tabActual} tabs={tabs} lang={lang} onNavigate={irA} onFallo={() => setMenuOk(false)} />}
       <AdminTopBar user={user} lang={lang} setLang={setLang} notiTotal={notis.length}
         onNotiOpen={() => setNotiOpen(true)} onAccount={() => setTab("cuenta")} onSetup={() => setTab("setup")}
         onLogout={() => setUser(null)} />
       <NotiCenter open={notiOpen} onClose={() => setNotiOpen(false)} notis={notis} onDismiss={dismissNoti} onSnooze={snoozeNoti} />
       <NotiPush notis={notis} storeKey="sam:contratosNotiSeen" onOpen={() => setNotiOpen(true)} />
-      <div className="sa-tabs-bar">
-        <div className="sa-tabs-inner">
-          {tabs.map((t) => (
-            <button key={t.id} className={"sa-tab" + (tabActual === t.id ? " active" : "")} onClick={() => { setTab(t.id); window.scrollTo({ top: 0, behavior: "smooth" }); }}>
-              {t.label}
-            </button>
-          ))}
+      {/* Barra propia de Docs: respaldo si el menú compartido no cargó. */}
+      {!menuOk && (
+        <div className="sa-tabs-bar">
+          <div className="sa-tabs-inner">
+            {tabs.map((t) => (
+              <button key={t.id} className={"sa-tab" + (tabActual === t.id ? " active" : "")} onClick={() => irA(t.id)}>
+                {t.label}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {tabActual === "docs" && (
         <DocsPanel refreshKey={refreshKey} lang={lang} user={user} perms={perms} staff={staff}
