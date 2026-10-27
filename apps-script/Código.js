@@ -167,7 +167,8 @@ function doPost(e) {
   var p = {};
   try { p = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (err) {}
     var __diag = accesosDiag_(p); if (__diag) return __diag;   // fase 1b: resumen de accesos (robot)
-    var __ses = sesionDe_(p); registrarAcceso_(p.action, !!__ses);   // fase 1b: aún no bloquea
+    var __ses = sesionDe_(p); registrarAcceso_(p.action, __ses ? true : esRobot_(p) ? 'r' : false);
+    var __bloq = exigirSesion_(p.action, !!__ses, p, ['ping']); if (__bloq) return __bloq;   // fase 1c: solo bloquea con SESION_EXIGIR = 1
   if (!auth_(p)) return json_({ ok: false, error: 'token' });
 
   var lock = LockService.getScriptLock();
