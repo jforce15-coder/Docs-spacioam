@@ -168,7 +168,7 @@ function doPost(e) {
   try { p = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (err) {}
     var __diag = accesosDiag_(p); if (__diag) return __diag;   // fase 1b: resumen de accesos (robot)
     var __ses = sesionDe_(p); registrarAcceso_(p.action, __ses ? true : esRobot_(p) ? 'r' : false);
-    var __bloq = exigirSesion_(p.action, !!__ses, p, ['ping']); if (__bloq) return __bloq;   // fase 1c: solo bloquea con SESION_EXIGIR = 1
+    var __bloq = (!__ses && firmaExterna_(p)) ? null : exigirSesion_(p.action, !!__ses, p, ['ping']); if (__bloq) return __bloq;   // fase 1c: solo bloquea con SESION_EXIGIR = 1
   if (!auth_(p)) return json_({ ok: false, error: 'token' });
 
   var lock = LockService.getScriptLock();
@@ -195,6 +195,67 @@ function doPost(e) {
   } finally {
     try { lock.releaseLock(); } catch (err2) {}
   }
+}
+
+/* ─── Fase 1c · firmante de afuera (enlace ?firmar=<id>) ─────────
+   Quien firma no tiene cuenta ni sesión. Sin ella solo pasa:
+   · getDoc de ese documento (el id del enlace es la llave);
+   · guardarDoc si lo ÚNICO nuevo es su firma (firmaNueva_);
+   · justo después de firmar: upsertContrato de ese folio y la copia firmada a sus firmantes. */
+function firmaExterna_(p) {
+  var a = String((p && p.action) || ''), c = CacheService.getScriptCache();
+  if (a === 'getDoc') return /^d[0-9a-z]{6,}$/.test(String(p.id || ''));
+  if (a === 'guardarDoc') {
+    var b = p.doc || {}, ant = b.id ? getDoc_(String(b.id)) : null;
+    if (!firmaNueva_(ant, b)) return false;
+    c.put('firmaExt_' + b.folio, '1', 900);   // upsertContrato de este folio, los próximos 15 min
+    if (b.estado === 'firmado') {
+      var dest = (b.firmantes || []).map(function (f) { return String(f.email || '').trim().toLowerCase(); }).filter(Boolean);
+      c.put('firmaCopia_' + clave_(dest), JSON.stringify(dest.concat([String(b.contraparteEmail || '').trim().toLowerCase()])), 1800);
+    }
+    return true;
+  }
+  if (a === 'upsertContrato') return !!c.get('firmaExt_' + String((p.contrato || [])[0] || ''));
+  if (a === 'enviarCorreo') {
+    var to = correos_(p.to), k = 'firmaCopia_' + clave_(to), ok = c.get(k);
+    if (!to.length || !ok) return false;
+    var permit = JSON.parse(ok), bcc = correos_(p.bcc);
+    if (!bcc.every(function (x) { return permit.indexOf(x) >= 0; })) return false;
+    c.remove(k);   // una sola copia por firma
+    return true;
+  }
+  return false;
+}
+function correos_(s) { return String(s || '').split(/[,;\s]+/).map(function (x) { return x.trim().toLowerCase(); }).filter(Boolean); }
+function clave_(lista) { return Utilities.base64EncodeWebSafe(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, lista.slice().sort().join(','))).slice(0, 32); }
+/* b es a + firmas nuevas: mismos firmantes, ninguna firma existente cambia, al menos una nueva,
+   la de Spacio AM igual, el historial solo crece y el resto del documento idéntico. */
+function firmaNueva_(a, b) {
+  if (!a || !b || a.id !== b.id) return false;
+  var fa = a.firmantes || [], fb = b.firmantes || [], nuevas = 0;
+  if (fa.length !== fb.length) return false;
+  for (var i = 0; i < fa.length; i++) {
+    if (fa[i].id !== fb[i].id || fa[i].email !== fb[i].email) return false;
+    if (fa[i].firma) { if (canon_(fa[i].firma) !== canon_(fb[i].firma)) return false; }
+    else if (fb[i].firma) nuevas++;
+  }
+  if (!nuevas || canon_(a.firmaSpacio) !== canon_(b.firmaSpacio)) return false;
+  var ha = a.historial || [], hb = b.historial || [];
+  if (hb.length < ha.length || canon_(hb.slice(0, ha.length)) !== canon_(ha)) return false;
+  var resto = function (d) {
+    var x = JSON.parse(JSON.stringify(d));
+    (x.firmantes || []).forEach(function (f) { delete f.firma; });
+    ['firmaFirmante', 'estado', 'certificado', 'historial'].forEach(function (k) { delete x[k]; });
+    return canon_(x);
+  };
+  return resto(a) === resto(b);
+}
+function canon_(v) {
+  if (v === undefined || v === null) return 'null';
+  if (Array.isArray(v)) return '[' + v.map(canon_).join(',') + ']';
+  if (typeof v === 'object') return '{' + Object.keys(v).sort().filter(function (k) { return v[k] !== undefined; })
+    .map(function (k) { return JSON.stringify(k) + ':' + canon_(v[k]); }).join(',') + '}';
+  return JSON.stringify(v);
 }
 
 /** GET con JSONP: lo usa el enlace de firma en un dispositivo nuevo. */
