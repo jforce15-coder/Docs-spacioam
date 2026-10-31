@@ -178,6 +178,9 @@ function doPost(e) {
       case 'ping':            return json_({ ok: true, alive: true });
       case 'upsertContrato':  return json_(upsertContrato_(p));
       case 'guardarDoc':      return json_(guardarDoc_(p));
+      case 'crearDoc':        return json_(crearDoc_(p));
+      case 'cambiarDoc':      return json_(cambiarDoc_(p));
+      case 'firmar':          return json_(firmarDoc_(p));
       case 'listarDocs':      return json_({ ok: true, docs: listarDocs_() });
       case 'getDoc':          return json_({ ok: true, doc: getDoc_(p.id) });
       case 'borrarDoc':       return json_(borrarDoc_(p.id));
@@ -212,6 +215,20 @@ function firmaExterna_(p) {
     if (b.estado === 'firmado') {
       var dest = (b.firmantes || []).map(function (f) { return String(f.email || '').trim().toLowerCase(); }).filter(Boolean);
       c.put('firmaCopia_' + clave_(dest), JSON.stringify(dest.concat([String(b.contraparteEmail || '').trim().toLowerCase()])), 1800);
+    }
+    return true;
+  }
+  /* firmar: solo la firma de un firmante de la otra parte (nunca la de Spacio AM). */
+  if (a === 'firmar') {
+    if (p.parte === 'spacio' || !/^d[0-9a-z]{6,}$/.test(String(p.id || ''))) return false;
+    var dd = getDoc_(String(p.id));
+    if (!dd) return false;
+    var prueba = aplicarFirma_(JSON.parse(JSON.stringify(dd)), p);
+    if (!prueba.ok) return false;
+    c.put('firmaExt_' + dd.folio, '1', 900);
+    if (prueba.doc.estado === 'firmado') {
+      var dest2 = (prueba.doc.firmantes || []).map(function (f) { return String(f.email || '').trim().toLowerCase(); }).filter(Boolean);
+      c.put('firmaCopia_' + clave_(dest2), JSON.stringify(dest2.concat([String(prueba.doc.contraparteEmail || '').trim().toLowerCase()])), 1800);
     }
     return true;
   }
@@ -326,10 +343,44 @@ function leerRegistro_(h, r) {
   return h.getRange(r, REG_COL, 1, ancho).getValues()[0].join('');
 }
 
-function guardarDoc_(p) {
-  var d = p.doc;
-  if (!d || !d.id) return { ok: false, error: 'sin_doc' };
+/* El servidor manda y nunca pierde datos por lo que el cliente NO mandó:
+   · un campo que no llega se conserva (p. ej. el DPI dentro de data);
+   · dentro de data se conservan las llaves que no llegan;
+   · una firma que ya está en la hoja no se borra porque el cliente no la trae.
+   Así un teléfono con una copia incompleta no puede borrar nada al guardar. */
+function fusionar_(viejo, nuevo) {
+  if (!viejo) return nuevo;
+  var out = {}, k;
+  for (k in viejo) out[k] = viejo[k];
+  for (k in nuevo) {
+    if (nuevo[k] === undefined) continue;
+    if (k === 'data' && viejo.data && typeof viejo.data === 'object' && nuevo.data && typeof nuevo.data === 'object') {
+      var dt = {}, j;
+      for (j in viejo.data) dt[j] = viejo.data[j];
+      for (j in nuevo.data) if (nuevo.data[j] !== undefined) dt[j] = nuevo.data[j];
+      out.data = dt;
+    } else out[k] = nuevo[k];
+  }
+  var porId = {};
+  (viejo.firmantes || []).forEach(function (f) { if (f && f.id) porId[f.id] = f; });
+  out.firmantes = (out.firmantes || []).map(function (f) {
+    var v = f && porId[f.id];
+    return v && v.firma && !f.firma ? Object.assign({}, f, { firma: v.firma }) : f;
+  });
+  if (viejo.firmaSpacio && !out.firmaSpacio) out.firmaSpacio = viejo.firmaSpacio;
+  if (viejo.firmaFirmante && !out.firmaFirmante) out.firmaFirmante = viejo.firmaFirmante;
+  return out;
+}
 
+function guardarDoc_(p) {
+  var entrante = p.doc;
+  if (!entrante || !entrante.id) return { ok: false, error: 'sin_doc' };
+  var d = fusionar_(getDoc_(String(entrante.id)), entrante);
+  return escribirDoc_(d);
+}
+
+/* Escribe el documento tal cual (ya fusionado o leído de la hoja). */
+function escribirDoc_(d) {
   var txt = JSON.stringify(d);
   var partes = trozos_(txt);
   if (partes.length > REG_MAX) return { ok: false, error: 'registro_demasiado_grande', chars: txt.length };
@@ -356,6 +407,101 @@ function guardarDoc_(p) {
   var guardado = leerRegistro_(h, r);
   if (guardado !== txt) return { ok: false, error: 'no_verificado', esperado: txt.length, guardado: guardado.length };
   return { ok: true, id: d.id, chars: txt.length, trozos: partes.length };
+}
+
+/* ─── Acciones que cambian solo su parte ─────────────────────── *
+ * El teléfono ya no manda el documento completo para cada acción: manda lo
+ * que cambia y el servidor lo aplica sobre la fila de la hoja. Cada una
+ * devuelve el documento como quedó, para que el teléfono lo muestre.     */
+
+/* crearDoc: el documento nuevo. Si el id ya existe (reintento), no lo pisa. */
+function crearDoc_(p) {
+  var d = p.doc;
+  if (!d || !d.id || !d.folio) return { ok: false, error: 'sin_doc' };
+  var ya = getDoc_(String(d.id));
+  if (ya) return { ok: true, doc: ya, ya: true };
+  var r = escribirDoc_(d);
+  return r.ok ? { ok: true, doc: d } : r;
+}
+
+/* cambiarDoc: solo estos campos y notas nuevas al historial. Nunca toca
+   data, firmantes ni firmas. */
+var CAMPOS_CAMBIABLES = ['nombre', 'propiedad', 'propiedadId', 'estado', 'motivo', 'enviado', 'visto',
+  'programado', 'correoFirma', 'mensaje', 'archivado', 'firmasCompactas'];
+function cambiarDoc_(p) {
+  var d = getDoc_(String(p.id || ''));
+  if (!d) return { ok: false, error: 'no_encontrado' };
+  var cambios = p.cambios || {};
+  CAMPOS_CAMBIABLES.forEach(function (k) {
+    if (!Object.prototype.hasOwnProperty.call(cambios, k)) return;
+    if (cambios[k] === null) delete d[k]; else d[k] = cambios[k];
+  });
+  (p.historial || []).forEach(function (h) {
+    if (!h || !h.texto) return;
+    d.historial = (d.historial || []).concat([{ texto: String(h.texto).slice(0, 500), ts: String(h.ts || new Date().toISOString()) }]);
+  });
+  var r = escribirDoc_(d);
+  return r.ok ? { ok: true, doc: d } : r;
+}
+
+/* firmar: agrega SOLO la firma al documento de la hoja y calcula el estado
+   (parcial o firmado, con su certificado). Si esa firma ya estaba, no hace
+   nada y responde ok: así la bandeja de salida puede reintentar sin miedo. */
+function firmarDoc_(p) {
+  var d = getDoc_(String(p.id || ''));
+  if (!d) return { ok: false, error: 'no_encontrado' };
+  var r = aplicarFirma_(d, p);
+  if (!r.ok || r.ya) return r;
+  var w = escribirDoc_(r.doc);
+  return w.ok ? { ok: true, doc: r.doc } : w;
+}
+
+/* Mismas reglas que docs-store.js (signFirmante · signSpacio · cerrar). */
+var SOLO_FIRMANTE_ = { emp_adelanto: 1 };
+var SOLO_SPACIO_ = { carta: 1 };
+function soloFirmante_(d) { return d.soloFirmante != null ? !!d.soloFirmante : !!SOLO_FIRMANTE_[d.tipo]; }
+function soloSpacio_(d) { return d.soloSpacio != null ? !!d.soloSpacio : !!SOLO_SPACIO_[d.tipo]; }
+function hashDoc_(str) {
+  var h = 0x811c9dc5;
+  for (var i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = (h * 0x01000193) >>> 0; }
+  var x = h.toString(16).toUpperCase();
+  while (x.length < 8) x = '0' + x;
+  return x;
+}
+function cerrarDoc_(d, ts) {
+  d.estado = 'firmado';
+  var f0 = (d.firmantes || [])[0];
+  d.certificado = 'SAM-FE-' + String(d.folio).replace('SAM-', '') + '-' +
+    hashDoc_(d.folio + d.firmanteEmail + (f0 && f0.firma ? f0.firma.ts : '')).slice(0, 4);
+  d.historial = (d.historial || []).concat([{ ts: ts, texto: soloSpacio_(d) ? 'Carta firmada por Spacio AM'
+    : soloFirmante_(d) ? 'Copia firmada enviada al firmante' : 'Copia firmada enviada a ambas partes' }]);
+}
+function aplicarFirma_(d, p) {
+  if (d.estado === 'cancelado' || d.estado === 'anulado') return { ok: false, error: 'cerrado' };
+  var fi = p.firma || {};
+  var img = String(fi.img || '');
+  if (!/^data:image\//.test(img) || img.length > 400000) return { ok: false, error: 'firma_invalida' };
+  var ahora = new Date(), ts = ahora.toISOString(), t = new Date(fi.ts || '');
+  if (!isNaN(t.getTime()) && t.getTime() <= ahora.getTime() + 300000) ts = t.toISOString();
+  var metodo = ['drawn', 'uploaded', 'typed'].indexOf(fi.metodo) >= 0 ? fi.metodo : 'drawn';
+  var faltan = function () { return (d.firmantes || []).filter(function (f) { return !f.firma; }).length; };
+  if (p.parte === 'spacio') {
+    if (d.firmaSpacio) return { ok: true, doc: d, ya: true };
+    d.firmaSpacio = { nombre: d.contraparteNombre, correo: d.contraparteEmail, img: img, metodo: metodo, ts: ts, ip: 'registrada al firmar' };
+    d.historial = (d.historial || []).concat([{ ts: ts, texto: 'Firmado por ' + d.contraparteNombre + ' (Spacio AM)' }]);
+    if (faltan() > 0) d.estado = 'parcial'; else cerrarDoc_(d, ts);
+    return { ok: true, doc: d };
+  }
+  var f = (d.firmantes || []).filter(function (x) { return x.id === p.firmanteId; })[0];
+  if (!f) return { ok: false, error: 'sin_firmante' };
+  if (f.firma) return { ok: true, doc: d, ya: true };
+  f.firma = { img: img, metodo: metodo, ts: ts, ip: String(fi.ip || 'registrada al firmar').slice(0, 80) };
+  var f0 = d.firmantes[0];
+  d.firmaFirmante = f0 && f0.firma ? Object.assign({ nombre: f0.nombre, correo: f0.email }, f0.firma) : null;
+  if (!d.visto) d.visto = ts;
+  d.historial = (d.historial || []).concat([{ ts: ts, texto: 'Firmado por ' + (f.nombre || d.firmanteNombre) }]);
+  if (faltan() === 0 && (soloFirmante_(d) || d.firmaSpacio)) cerrarDoc_(d, ts); else d.estado = 'parcial';
+  return { ok: true, doc: d };
 }
 
 function listarDocs_() {
@@ -589,7 +735,7 @@ function marcarEnviado_(docId, r) {
   d.historial = (d.historial || []).concat([{ ts: ts, texto: r.mal.length
     ? 'Envío programado: el correo NO salió para ' + r.mal.join(', ') + '. Usa Reenviar.'
     : 'Envío programado: correo de firma enviado a ' + r.ok.join(', ') + '.' }]);
-  guardarDoc_({ doc: d });
+  escribirDoc_(d);
 
   var hc = hoja_('CONTRATOS');
   var fila = buscarFila_(hc, 1, d.folio);

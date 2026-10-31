@@ -198,125 +198,305 @@
     return Promise.race([req, limite]).then(function (r) { clearTimeout(timer); return r; });
   }
 
+  /* Cuántas firmas lleva un documento — la medida para no perder ninguna. */
+  function firmasCount(d) {
+    if (!d) return -1;
+    return (d.firmantes || []).filter(function (f) { return f && f.firma; }).length + (d.firmaSpacio ? 1 : 0);
+  }
+  function parseDoc(d) {
+    if (typeof d === "string") { try { return JSON.parse(d); } catch (e) { return null; } }
+    return d || null;
+  }
+
+  /* ── Bandeja de salida ───────────────────────────────────────
+     Una firma no puede quedarse solo en el teléfono de quien firmó ni
+     perderse si la red falla. Antes de mandarla se guarda aquí, y se
+     reintenta al abrir la app y al recuperar el foco. Guarda SOLO la firma
+     pendiente (id del documento, quién firma y la imagen), nunca el
+     contrato ni sus datos (DPI). Nada de aquí se borra hasta que el
+     servidor confirma.
+     Entradas: { tipo: "firma", id, folio, firmanteId | parte: "spacio", firma }
+               { tipo: "legible", id }  → falta la fila de CONTRATOS/FIRMAS */
+  var OUT_KEY = "spacio_sync_bandeja_v2";
+  var OUT_VIEJA = "spacio_sync_outbox_v1";   /* la de antes: documentos completos; se migra */
+  function leer(k) { try { return JSON.parse(localStorage.getItem(k) || "{}") || {}; } catch (e) { return {}; } }
+  function escribirLS(k, o) {
+    try { if (Object.keys(o).length) localStorage.setItem(k, JSON.stringify(o)); else localStorage.removeItem(k); return true; } catch (e) { return false; }
+  }
+  function outRead() { return leer(OUT_KEY); }
+  function claveFirma(e) { return e.id + ":" + (e.parte === "spacio" ? "spacio" : e.firmanteId); }
+  function encolar(e) {
+    var o = outRead(), k = e.tipo === "legible" ? e.id + ":legible" : claveFirma(e);
+    if (e.tipo === "legible" && o[k]) return true;
+    o[k] = Object.assign({ ts: new Date().toISOString() }, e);
+    return escribirLS(OUT_KEY, o);
+  }
+  function quitar(k) { var o = outRead(); if (o[k]) { delete o[k]; escribirLS(OUT_KEY, o); } }
+  function cambiarEntrada(k, e) { var o = outRead(); o[k] = e; escribirLS(OUT_KEY, o); }
+  /* Firmas sin confirmar (lo que ve la persona). */
+  function pendientes() {
+    var o = outRead();
+    return Object.keys(o).filter(function (k) { return o[k] && o[k].tipo === "firma"; }).length + Object.keys(leer(OUT_VIEJA)).length;
+  }
+  /* Todo lo que falta subir, incluidas las filas legibles. */
+  function pendientesTodo() { return Object.keys(outRead()).length + Object.keys(leer(OUT_VIEJA)).length; }
+
+  /* Las firmas pendientes de este teléfono, encima del documento que llega
+     del servidor: así quien firmó sin internet la sigue viendo firmada. */
+  function conPendientes(doc) {
+    if (!doc || !F() || !F().aplicarFirma) return doc;
+    var o = outRead();
+    Object.keys(o).forEach(function (k) {
+      var e = o[k];
+      if (e && e.tipo === "firma" && e.id === doc.id && !e.error) doc = F().aplicarFirma(doc, e);
+    });
+    return doc;
+  }
+
   /* Enlace de firma: trae SOLO ese documento. Antes el enlace descargaba el
      registro completo (listarDocs) — todos los contratos con sus firmas
      incrustadas, varios MB — y en el teléfono esa respuesta no terminaba de
-     llegar: la pantalla se quedaba en "Abriendo tu documento…". */
+     llegar: la pantalla se quedaba en "Abriendo tu documento…".
+     El documento queda solo en memoria. */
+  function getDocCrudo(id, ms) {
+    return post({ action: "getDoc", id: id }, ms || 25000).then(function (r) {
+      var d = r && r.ok ? parseDoc(r.doc) : null;
+      if (!d) return { ok: false, error: (r && r.error) || "no_encontrado", noExiste: !!(r && r.ok) };
+      return { ok: true, doc: d };
+    });
+  }
   function getDoc(id, ms) {
     if (!id) return Promise.resolve({ ok: false, error: "sin_id" });
-    return post({ action: "getDoc", id: id }, ms || 25000).then(function (r) {
-      var d = r && r.ok ? r.doc : null;
-      if (typeof d === "string") { try { d = JSON.parse(d); } catch (e) { d = null; } }
-      if (!d) return { ok: false, error: (r && r.error) || "no_encontrado", noExiste: !!(r && r.ok) };
-      /* Si este navegador ya tiene una versión con más firmas, gana la local. */
-      var ld = F() && F().get ? F().get(id) : null;
+    return getDocCrudo(id, ms).then(function (r) {
+      if (!r.ok) return r;
+      var d = conPendientes(r.doc);
+      var ld = F() && F().getCompleto ? F().getCompleto(id) : null;
       if (ld && firmasCount(ld) > firmasCount(d)) return { ok: true, doc: ld };
       if (F() && F().upsert) F().upsert(d);
       return { ok: true, doc: d };
     });
   }
 
-  /* ── Bandeja de salida ───────────────────────────────────────
-     Una firma no puede quedarse solo en el navegador de quien firmó.
-     Si la escritura en la hoja falla (red del firmante, cuota de Apps
-     Script, pestaña que se cierra antes de terminar), el documento se
-     guarda aquí y se reintenta al abrir la app y al recuperar el foco.
-     Antes esto era fire-and-forget: nadie miraba el resultado y la
-     firma se perdía sin dejar rastro. */
-  var OUT_KEY = "spacio_sync_outbox_v1";
-  function outRead() { try { return JSON.parse(localStorage.getItem(OUT_KEY) || "{}"); } catch (e) { return {}; } }
-  function outWrite(o) { try { localStorage.setItem(OUT_KEY, JSON.stringify(o)); } catch (e) {} }
-  /* Cada entrada guarda el documento y qué hoja quedó pendiente. */
-  function enqueue(doc, falta) {
-    if (!doc || !doc.id) return;
-    var o = outRead();
-    o[doc.id] = { doc: doc, falta: falta || { doc: true, legible: true }, ts: new Date().toISOString() };
-    outWrite(o);
-  }
-  function dequeue(id) { var o = outRead(); if (o[id]) { delete o[id]; outWrite(o); } }
-  function pendientes() { return Object.keys(outRead()).length; }
-
-  /* Cuántas firmas lleva un documento — la medida para no perder ninguna. */
-  function firmasCount(d) {
-    if (!d) return -1;
-    return (d.firmantes || []).filter(function (f) { return f && f.firma; }).length + (d.firmaSpacio ? 1 : 0);
-  }
-
-  /* Escritura: son DOS hojas y cuentan como una sola tarea.
-     · DOCUMENTOS  → el registro que leen las dos apps (la autoridad)
-     · CONTRATOS/FIRMAS → la hoja legible que se revisa a mano
-     Si cualquiera de las dos no confirma, el documento queda en la bandeja
-     de salida con la marca de lo que falta, y flush() reintenta solo eso.
-     Nunca se declara firmado con una de las dos hojas atrasada. */
-  function escribir(doc, falta) {
-    var tareas = [];
-    var hacerDoc = !falta || falta.doc !== false;
-    var hacerLegible = !falta || falta.legible !== false;
-    tareas.push(hacerDoc ? post({ action: "guardarDoc", doc: doc }) : Promise.resolve({ ok: true, saltado: true }));
-    var legible = null;
-    if (hacerLegible) {
-      try { legible = { action: "upsertContrato", contrato: CONTRATOS.row(doc), firmas: FIRMAS.rows(doc) }; } catch (e) { legible = null; }
-    }
-    tareas.push(legible ? post(legible) : Promise.resolve({ ok: hacerLegible ? false : true, error: hacerLegible ? "fila_ilegible" : null, saltado: !hacerLegible }));
-    return Promise.all(tareas).then(function (r) {
-      var okDoc = !!(r[0] && r[0].ok), okLegible = !!(r[1] && r[1].ok);
-      if (okDoc && okLegible) dequeue(doc.id);
-      else enqueue(doc, { doc: okDoc ? false : true, legible: okLegible ? false : true });
-      return { ok: okDoc && okLegible, doc: r[0], contrato: r[1], pendientes: pendientes() };
-    }).catch(function (e) {
-      enqueue(doc, { doc: true, legible: true });
-      return { ok: false, error: String(e), pendientes: pendientes() };
+  /* Hoja legible (CONTRATOS/FIRMAS) a partir del documento del servidor.
+     Si no confirma, queda en la bandeja solo «falta la fila de id». */
+  function legible(doc) {
+    var body = null;
+    try { body = { action: "upsertContrato", contrato: CONTRATOS.row(doc), firmas: FIRMAS.rows(doc) }; } catch (e) { body = null; }
+    if (!body) return Promise.resolve({ ok: false, error: "fila_ilegible" });
+    return post(body).then(function (r) {
+      if (r && r.ok) quitar(doc.id + ":legible"); else encolar({ tipo: "legible", id: doc.id });
+      return r || { ok: false };
     });
   }
 
+  /* ── Acciones (el servidor manda) ─────────────────────────── */
+
+  /* Crear: el documento nuevo va al servidor; si no confirma, no existe. */
+  function crear(doc) {
+    if (!doc || !doc.id) return Promise.resolve({ ok: false, error: "sin_doc" });
+    return post({ action: "crearDoc", doc: doc }).then(function (r) {
+      var d = r && r.ok ? parseDoc(r.doc) : null;
+      if (!d) return { ok: false, error: (r && r.error) || "sin_respuesta" };
+      if (F() && F().upsert) F().upsert(d);
+      return legible(d).then(function (l) { return { ok: true, doc: d, legible: !!(l && l.ok) }; });
+    });
+  }
+
+  /* Cambiar: solo los campos que cambiaron y las notas nuevas del historial.
+     El servidor los aplica sobre SU fila: nunca reescribe data, firmantes ni
+     firmas, así que un DPI no puede borrarse por una copia incompleta. */
+  var CAMPOS = ["nombre", "propiedad", "propiedadId", "estado", "motivo", "enviado", "visto",
+    "programado", "correoFirma", "mensaje", "archivado", "firmasCompactas"];
+  function cambiar(antes, despues) {
+    var cambios = {}, n = 0;
+    CAMPOS.forEach(function (k) {
+      if (JSON.stringify(antes[k]) === JSON.stringify(despues[k])) return;
+      cambios[k] = despues[k] === undefined ? null : despues[k]; n++;
+    });
+    var historial = (despues.historial || []).slice((antes.historial || []).length);
+    if (!n && !historial.length) return Promise.resolve({ ok: true, doc: antes, sinCambios: true });
+    return post({ action: "cambiarDoc", id: antes.id, cambios: cambios, historial: historial }).then(function (r) {
+      var d = r && r.ok ? parseDoc(r.doc) : null;
+      if (!d) return { ok: false, error: (r && r.error) || "sin_respuesta" };
+      d = conPendientes(d);
+      if (F() && F().upsert) F().upsert(d);
+      return legible(d).then(function () { return { ok: true, doc: d }; });
+    });
+  }
+
+  /* Firmar: la firma se guarda PRIMERO en la bandeja (sin el contrato) y se
+     muestra en memoria; después se sube con la acción firmar del servidor.
+     f = { id, folio, firmanteId | parte: "spacio", firma: { img, metodo, ts } } */
+  function firmar(f) {
+    var e = { tipo: "firma", id: f.id, folio: f.folio || "", firma: { img: f.firma.img, metodo: f.firma.metodo, ts: f.firma.ts || new Date().toISOString() } };
+    if (f.parte === "spacio") e.parte = "spacio"; else e.firmanteId = f.firmanteId;
+    encolar(e);
+    var local = F() && F().getCompleto ? F().getCompleto(f.id) : null;
+    if (local) { local = F().aplicarFirma(local, e); F().upsert(local); }
+    return subir(claveFirma(e)).then(function (r) {
+      return r && r.ok ? { ok: true, doc: r.doc, pendientes: pendientes() }
+        : { ok: false, error: r && r.error, doc: (F() && F().getCompleto(f.id)) || local, pendientes: pendientes() };
+    });
+  }
+
+  /* Errores con los que reintentar no sirve: la entrada se marca, se queda
+     guardada (nunca se borra una firma) y se avisa en el panel. */
+  var FIJOS = { cerrado: 1, sin_firmante: 1, no_encontrado: 1, firma_invalida: 1 };
+  function subir(k) {
+    var e = outRead()[k];
+    if (!e) return Promise.resolve({ ok: true, nada: true });
+    if (e.tipo === "legible") {
+      return getDocCrudo(e.id).then(function (g) {
+        if (!g.ok) { if (g.noExiste) quitar(k); return g; }
+        return legible(g.doc);
+      });
+    }
+    var body = { action: "firmar", id: e.id, firma: e.firma };
+    if (e.parte === "spacio") body.parte = "spacio"; else body.firmanteId = e.firmanteId;
+    return post(body).then(function (r) {
+      var d = r && r.ok ? parseDoc(r.doc) : null;
+      if (!d) {
+        if (r && FIJOS[r.error]) { e.error = r.error; cambiarEntrada(k, e); }
+        return { ok: false, error: (r && r.error) || "sin_respuesta" };
+      }
+      /* La firma ya está en la hoja: la imagen sale de la bandeja. */
+      quitar(k);
+      d = conPendientes(d);
+      if (F() && F().upsert) F().upsert(d);
+      return legible(d).then(function () { return { ok: true, doc: d }; });
+    });
+  }
+
+  /* La bandeja de antes guardaba documentos completos (con DPI). Cada uno se
+     convierte en sus firmas pendientes y se borra SOLO después de dejarlas en
+     la bandeja nueva. Si la hoja no tiene el documento (se creó sin internet),
+     se sube completo una vez: es la única copia. */
+  function migrarBandejaVieja() {
+    var o = leer(OUT_VIEJA), ids = Object.keys(o);
+    if (!ids.length) return Promise.resolve(true);
+    return ids.reduce(function (p, id) {
+      return p.then(function (seguir) {
+        if (!seguir) return false;
+        var ent = o[id] || {}, doc = parseDoc(ent.doc || ent);
+        if (!doc || !doc.id) { delete o[id]; escribirLS(OUT_VIEJA, o); return true; }
+        return getDocCrudo(doc.id).then(function (g) {
+          if (!g.ok && !g.noExiste) return false;   /* sin red: se queda todo como está */
+          if (g.noExiste) {
+            return post({ action: "guardarDoc", doc: doc }).then(function (r) {
+              if (!(r && r.ok)) return false;
+              delete o[id]; escribirLS(OUT_VIEJA, o);
+              encolar({ tipo: "legible", id: doc.id });
+              return true;
+            });
+          }
+          var srv = g.doc, porId = {};
+          (srv.firmantes || []).forEach(function (f) { porId[f.id] = f; });
+          var ok = true;
+          (doc.firmantes || []).forEach(function (f) {
+            if (f.firma && f.firma.img && !(porId[f.id] && porId[f.id].firma)) ok = encolar({ tipo: "firma", id: doc.id, folio: doc.folio, firmanteId: f.id, firma: { img: f.firma.img, metodo: f.firma.metodo, ts: f.firma.ts } }) && ok;
+          });
+          if (doc.firmaSpacio && !srv.firmaSpacio) ok = encolar({ tipo: "firma", id: doc.id, folio: doc.folio, parte: "spacio", firma: { img: doc.firmaSpacio.img, metodo: doc.firmaSpacio.metodo, ts: doc.firmaSpacio.ts } }) && ok;
+          ok = encolar({ tipo: "legible", id: doc.id }) && ok;
+          if (!ok) return false;
+          delete o[id]; escribirLS(OUT_VIEJA, o);
+          return true;
+        });
+      });
+    }, Promise.resolve(true));
+  }
+
+  /* La copia vieja de documentos (spacio_docs_v1, contratos completos).
+     Se compara con la hoja: cada firma que esté solo aquí pasa a la bandeja
+     (sin el contrato). La copia se borra solo cuando la bandeja quedó vacía. */
+  function migrarLegado() {
+    var L = F() && F().legado ? F().legado() : null;
+    if (!L) return Promise.resolve(true);
+    var conFirma = L.filter(function (d) { return d && d.id && !d.demo && firmasCount(d) > 0; });
+    return conFirma.reduce(function (p, doc) {
+      return p.then(function (seguir) {
+        if (!seguir) return false;
+        var mio = F().getCompleto(doc.id);
+        var traer = mio ? Promise.resolve({ ok: true, doc: mio }) : getDocCrudo(doc.id);
+        return traer.then(function (g) {
+          if (!g.ok) return !!g.noExiste;   /* borrado en la hoja: nada que subir */
+          var srv = g.doc, porId = {}, ok = true;
+          (srv.firmantes || []).forEach(function (f) { porId[f.id] = f; });
+          (doc.firmantes || []).forEach(function (f) {
+            if (f.firma && f.firma.img && porId[f.id] && !porId[f.id].firma) ok = encolar({ tipo: "firma", id: doc.id, folio: doc.folio, firmanteId: f.id, firma: { img: f.firma.img, metodo: f.firma.metodo, ts: f.firma.ts } }) && ok;
+          });
+          if (doc.firmaSpacio && doc.firmaSpacio.img && !srv.firmaSpacio) ok = encolar({ tipo: "firma", id: doc.id, folio: doc.folio, parte: "spacio", firma: { img: doc.firmaSpacio.img, metodo: doc.firmaSpacio.metodo, ts: doc.firmaSpacio.ts } }) && ok;
+          return ok;
+        });
+      });
+    }, Promise.resolve(true)).then(function (ok) {
+      if (!ok) return false;
+      return subirTodo().then(function () {
+        if (!pendientesTodo()) { F().borrarLegado(); return true; }
+        return false;
+      });
+    });
+  }
+
+  function subirTodo() {
+    var ks = Object.keys(outRead());
+    return ks.reduce(function (p, k) {
+      return p.then(function () { return subir(k).catch(function () {}); });
+    }, Promise.resolve());
+  }
+
+  /* Reintenta todo lo pendiente, uno por uno. Una sola vuelta a la vez. */
+  var enCurso = null;
+  function flush() {
+    if (enCurso) return enCurso;
+    enCurso = migrarBandejaVieja().then(function () { return subirTodo(); })
+      .catch(function () {})
+      .then(function () { enCurso = null; return { ok: true, pendientes: pendientes() }; });
+    return enCurso;
+  }
+
+  /* Guardar el documento completo (solo para aligerar firmas viejas): el
+     servidor lo fusiona con su fila y conserva lo que no llegue. */
   function push(accion, doc) {
     if (!doc) return Promise.resolve({ ok: false });
-    return escribir(doc, null);
+    return post({ action: "guardarDoc", doc: doc }).then(function (r) {
+      if (!(r && r.ok)) return { ok: false, error: (r && r.error) || "sin_respuesta" };
+      return legible(doc).then(function () { return { ok: true }; });
+    });
   }
 
-  /* Reintenta todo lo que quedó pendiente, uno por uno, y solo la hoja
-     que quedó atrasada. */
-  function flush() {
-    var o = outRead(), ids = Object.keys(o);
-    if (!ids.length) return Promise.resolve({ ok: true, pendientes: 0 });
-    return ids.reduce(function (p, id) {
-      return p.then(function () {
-        var e = o[id];
-        return escribir(e.doc || e, (e && e.falta) || null).catch(function () {});
-      });
-    }, Promise.resolve()).then(function () { return { ok: true, pendientes: pendientes() }; });
-  }
-
-  /* Lectura: trae TODOS los contratos de la hoja (los de las dos apps)
-     y reconstruye el registro local desde la columna Registro.
-     Se fusiona, no se sobreescribe: si este navegador tiene una firma que
-     la hoja todavía no conoce, gana la versión local y se vuelve a subir. */
+  /* Lectura: trae TODOS los contratos de la hoja (los de las dos apps) a la
+     memoria, con las firmas pendientes de este teléfono encima. Después sube
+     lo pendiente y migra la copia vieja. */
   function pull() {
     return post({ action: "listarDocs" }, 90000).then(function (r) {
       if (!r || !r.ok) return { ok: false, docs: [] };
-      var remotos = (r.docs || []).map(function (d) {
-        if (typeof d === "string") { try { return JSON.parse(d); } catch (e) { return null; } }
-        return d;
-      }).filter(Boolean);
-      var locales = {};
-      if (F() && F().all) (F().all() || []).forEach(function (d) { locales[d.id] = d; });
-      var vistos = {};
-      var docs = remotos.map(function (rd) {
-        vistos[rd.id] = 1;
-        var ld = locales[rd.id];
-        if (ld && firmasCount(ld) > firmasCount(rd)) { enqueue(ld); return ld; }
-        return rd;
-      });
-      Object.keys(locales).forEach(function (id) {
-        if (vistos[id]) return;
-        var ld = locales[id];
-        if (ld.demo) return;
-        if (firmasCount(ld) > 0) { enqueue(ld); docs.push(ld); }
-      });
+      var docs = (r.docs || []).map(parseDoc).filter(Boolean).map(conPendientes);
       if (F() && F().replaceAll) F().replaceAll(docs);
-      flush();
-      return { ok: true, docs: docs };
+      return flush().then(function () { return migrarLegado(); }).catch(function () {})
+        .then(function () { return { ok: true, docs: docs }; });
     });
+  }
+
+  /* Cerrar sesión: primero se intenta subir lo pendiente y migrar la copia
+     vieja. Después se borra todo lo de la persona MENOS la bandeja de salida
+     (si quedó algo, se queda hasta que suba). Devuelve cuántas firmas quedan. */
+  function salir() {
+    return flush().then(function () { return migrarLegado(); }).catch(function () { return false; })
+      .then(function () {
+        var legadoQueda = !!(F().legado && F().legado());
+        F().limpiarAlSalir({ conservarLegado: legadoQueda });
+        return { pendientes: pendientes(), legado: legadoQueda };
+      });
+  }
+  /* Antes de cerrar sesión: ¿hay firmas sin subir? */
+  function haySinSubir() { return pendientes() > 0 || !!(F() && F().legado && F().legado()); }
+
+  /* Texto corto para un error del servidor. */
+  function motivo(r) {
+    var e = String((r && r.error) || "");
+    if (!e || e === "timeout" || /fetch|network|Failed|abort/i.test(e)) return "sin conexión";
+    if (e === "session") return "tu sesión venció";
+    return e;
   }
 
   /* Archivo: el PDF firmado + certificado va a la carpeta de contratos. */
@@ -463,6 +643,8 @@
     HOJAS: [CONTRATOS, FIRMAS], CONTRATOS: CONTRATOS, FIRMAS: FIRMAS,
     tabla: tabla, toCSV: toCSV, toTSV: toTSV, download: download,
     push: push, pull: pull, getDoc: getDoc, GT: GT, armarCorreo: armarCorreo, programar: programar,
+    crear: crear, cambiar: cambiar, firmar: firmar, salir: salir, haySinSubir: haySinSubir, motivo: motivo,
+    pendientesTodo: pendientesTodo, migrarLegado: migrarLegado,
     cancelarProgramado: cancelarProgramado, propiedades: propiedades, propiedadesCache: propiedadesCache, archivar: archivar, borrar: borrar, correo: correo, post: post,
     flush: flush, pendientes: pendientes, firmasCount: firmasCount, outbox: outRead,
     permisosRemotos: permisosRemotos, guardarPermiso: guardarPermiso,

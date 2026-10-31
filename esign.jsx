@@ -318,7 +318,7 @@ function SendModal({ open, tipo, data, custom, edits, sugerido, onClose, onSent 
     setBusy("Guardando…");
     const S = window.SpacioSync;
     const sendAt = cuando.modo === "programar" && S ? S.GT.aISO(cuando.fecha, cuando.hora) : null;
-    const doc = window.Docs.create({
+    const doc = window.Docs.nuevo({
       tipo, data, custom, edits,
       nombre: nombreDoc,
       propiedad: data.propiedadNombre || "", propiedadId: data.propiedadId || "",
@@ -327,9 +327,16 @@ function SendModal({ open, tipo, data, custom, edits, sugerido, onClose, onSent 
       contraparteNombre: data.contratanteNombre,
       mensaje: mensaje.trim(),
     });
-    if (!S) { setBusy(""); onSent(doc, { ok: false, fallidos: (doc.firmantes || []).map((f) => f.email), motivo: "sin_sync" }); return; }
+    if (!S) { setBusy(""); window.alert("No se pudo guardar el documento: falta la conexión con el registro."); return; }
 
-    const sync = await S.push("crear", doc);
+    /* El servidor manda: el documento existe solo cuando la hoja confirma.
+       Si no, no se manda ningún correo y el formulario sigue aquí. */
+    const sync = await S.crear(doc);
+    if (!(sync && sync.ok)) {
+      setBusy("");
+      window.alert("No se pudo guardar el documento en el registro (" + S.motivo(sync) + "). No se envió nada: intenta de nuevo.");
+      return;
+    }
 
     /* Programado: el servidor guarda los correos ya armados y los manda a la
        hora indicada. Aquí solo se confirma que quedó registrado. */
@@ -337,11 +344,11 @@ function SendModal({ open, tipo, data, custom, edits, sugerido, onClose, onSent 
       setBusy("Programando…");
       let r;
       try { r = await S.programar(doc, sendAt); } catch (err) { r = { ok: false, error: String(err) }; }
-      const d = window.Docs.update(doc.id, (dd) => {
+      const c = await window.Docs.cambiar(doc.id, (dd) => {
         dd.programado = Object.assign({}, dd.programado, r && r.ok ? { registrado: new Date().toISOString(), error: "" } : { error: (r && r.error) || "sin_respuesta" });
         return dd;
-      }) || doc;
-      if (!(r && r.ok)) await S.push("actualizar", d);
+      });
+      const d = (c && c.ok && c.doc) || window.Docs.getCompleto(doc.id) || doc;
       setBusy("");
       onSent(d, { ok: !!(r && r.ok), programado: true, etiqueta: d.programado.etiqueta, enviados: [], fallidos: r && r.ok ? [] : (d.firmantes || []).map((f) => f.email), motivo: (r && r.error) || "", sync: sync });
       return;
@@ -357,7 +364,7 @@ function SendModal({ open, tipo, data, custom, edits, sugerido, onClose, onSent 
     const enviados = envios.filter((e) => e.ok).map((e) => e.email);
     const fallidos = envios.filter((e) => !e.ok);
     const ts = new Date().toISOString();
-    const d = window.Docs.update(doc.id, (dd) => {
+    const c = await window.Docs.cambiar(doc.id, (dd) => {
       dd.correoFirma = { ts: ts, enviados: enviados, fallidos: fallidos.map((e) => e.email), error: (fallidos[0] && fallidos[0].error) || "" };
       dd.historial = (dd.historial || []).concat([{
         ts: ts,
@@ -366,8 +373,8 @@ function SendModal({ open, tipo, data, custom, edits, sugerido, onClose, onSent 
           : "Correo de firma enviado a " + enviados.join(", ") + ".",
       }]);
       return dd;
-    }) || doc;
-    if (fallidos.length) await S.push("actualizar", d);
+    });
+    const d = (c && c.ok && c.doc) || window.Docs.getCompleto(doc.id) || doc;
     setBusy("");
     onSent(d, { ok: !fallidos.length, enviados: enviados, fallidos: fallidos.map((e) => e.email), motivo: (fallidos[0] && fallidos[0].error) || "", sync: sync });
   };
@@ -755,12 +762,12 @@ function SpacioSignModal({ doc, onClose, onDone }) {
 
   const firmar = async ({ img, metodo }) => {
     setBusy("Firmando…");
-    const d = F.signSpacio(doc.id, { img, metodo });
-    if (window.SpacioSync) {
-      const r = await window.SpacioSync.push("firmar", d);
-      if (r && !r.ok) window.alert("Tu firma quedó guardada, pero el registro compartido no confirmó. La reintentaremos automáticamente.");
-      if (d.estado === "firmado") window.SpacioSync.correo("copiaFirmada", d);
-    }
+    /* Solo la firma va al servidor (acción firmar); si no confirma, queda
+       en la bandeja de salida —sin el contrato— y se reintenta sola. */
+    const r = await window.SpacioSync.firmar({ id: doc.id, folio: doc.folio, parte: "spacio", firma: { img, metodo, ts: new Date().toISOString() } });
+    const d = (r && r.doc) || F.aplicarFirma(doc, { parte: "spacio", firma: { img, metodo } });
+    if (!(r && r.ok)) window.alert("Tu firma quedó guardada en este dispositivo, pero el registro compartido no confirmó. La reintentaremos automáticamente.");
+    else if (d.estado === "firmado") window.SpacioSync.correo("copiaFirmada", d);
     setBusy("");
     onDone(d);
   };
@@ -833,21 +840,19 @@ function SignExperience({ doc, onUpdate, onExit, stepOverride, onStepChange, pre
       if (onStepChange) onStepChange(3); else setStep(3);
       return;
     }
-    let d = F.signFirmante(current.id, activo.id, { img, metodo });
-    setLive(d); if (onUpdate) onUpdate(d);
     setLightbox(false);
-    /* La firma se registra en la hoja compartida ANTES de dar el paso por
-       terminado: si esa escritura falla, queda en la bandeja de salida y se
-       reintenta al abrir. Antes se enviaba sin esperar respuesta y una firma
-       podía quedarse solo en este navegador sin que el panel lo supiera. */
-    if (window.SpacioSync) {
-      setBusy("Registrando tu firma…");
-      const r = await window.SpacioSync.push("firmar", d);
-      setSyncPend(!(r && r.ok));
-      /* Si esta firma cerró el documento, la copia sale desde aquí:
-         antes solo se enviaba cuando Spacio AM firmaba de último. */
-      if (r && r.ok && d.estado === "firmado") window.SpacioSync.correo("copiaFirmada", d);
-    }
+    /* La firma se guarda primero en la bandeja de salida de este teléfono
+       (solo la firma, sin el contrato) y se manda al servidor con la acción
+       firmar, que la agrega a la hoja. Si no confirma, se reintenta sola al
+       abrir y cada 15 s mientras esta página siga abierta. */
+    setBusy("Registrando tu firma…");
+    const r = await window.SpacioSync.firmar({ id: current.id, folio: current.folio, firmanteId: activo.id, firma: { img, metodo, ts: new Date().toISOString() } });
+    const d = (r && r.doc) || F.aplicarFirma(current, { firmanteId: activo.id, firma: { img, metodo } });
+    setLive(d); if (onUpdate) onUpdate(d);
+    setSyncPend(!(r && r.ok));
+    /* Si esta firma cerró el documento, la copia sale desde aquí:
+       antes solo se enviaba cuando Spacio AM firmaba de último. */
+    if (r && r.ok && d.estado === "firmado") window.SpacioSync.correo("copiaFirmada", d);
     /* La firma por parte de Spacio AM ya no es automática: la hace una
        persona desde el panel. Aquí solo se confirma lo firmado. */
     setBusy("");

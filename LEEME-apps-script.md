@@ -128,7 +128,10 @@ El web app envía `POST` con el cuerpo en JSON. Todas llevan `token`.
 |---|---|
 | `ping` | Comprobar que el endpoint responde |
 | `upsertContrato` | Escribe/actualiza la fila del documento en `CONTRATOS` y sus filas en `FIRMAS` (busca por folio: no duplica) |
-| `guardarDoc` | Guarda el documento completo en `DOCUMENTOS` |
+| `guardarDoc` | Guarda el documento completo en `DOCUMENTOS`. **Conserva lo que no llega**: un campo, una llave de `data` (p. ej. el DPI) o una firma que falte en lo que manda el cliente no se borra |
+| `crearDoc` | Crea el documento nuevo. Si el id ya existe (reintento), no lo pisa |
+| `cambiarDoc` | Cambia solo campos sueltos (nombre, estado, motivo, propiedad, envío, correo de firma) y agrega notas al historial. Nunca toca `data` ni las firmas |
+| `firmar` | Agrega solo una firma (de un firmante o de Spacio AM) y calcula el estado y el certificado. Si esa firma ya estaba, responde ok sin cambiar nada. Sin sesión solo vale para la firma de un firmante de afuera |
 | `listarDocs` | Devuelve todos los documentos guardados |
 | `getDoc` | Devuelve un documento por id — lo usa el enlace `?firmar=` |
 | `borrarDoc` | Elimina un documento del registro |

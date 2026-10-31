@@ -75,7 +75,7 @@ function CartaSignModal({ open, data, edits, onClose, onDone }) {
   const firmar = async ({ img, metodo }) => {
     const S = window.SpacioSync;
     setBusy("Guardando…");
-    const doc = F.create({
+    const doc = F.nuevo({
       tipo: "carta", data, edits,
       nombre: data.cartaTitulo || "Carta",
       firmantes: [],
@@ -83,10 +83,15 @@ function CartaSignModal({ open, data, edits, onClose, onDone }) {
       contraparteNombre: firmante.nombre,
       contraparteEmail: firmante.email,
     });
-    let sync = null;
-    if (S) sync = await S.push("crear", doc);
-    const d = F.signSpacio(doc.id, { img, metodo });
-    if (S) await S.push("firmar", d);
+    /* El servidor manda: primero se crea en la hoja; si no confirma, no hay carta. */
+    const sync = await S.crear(doc);
+    if (!(sync && sync.ok)) {
+      setBusy("");
+      window.alert("No se pudo guardar la carta en el registro (" + S.motivo(sync) + "). Intenta de nuevo.");
+      return;
+    }
+    const r = await S.firmar({ id: doc.id, folio: doc.folio, parte: "spacio", firma: { img, metodo, ts: new Date().toISOString() } });
+    const d = (r && r.doc) || F.aplicarFirma(sync.doc, { parte: "spacio", firma: { img, metodo } });
     setBusy("Descargando PDF…");
     try { await window.downloadSignedPdf(d); } catch (e) { console.error(e); }
     setBusy("");
