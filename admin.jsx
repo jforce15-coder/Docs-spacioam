@@ -42,6 +42,15 @@ const LOGIN_T = {
   },
 };
 
+/* Sesión vencida: se borra lo de la persona sin esperar a la red. La bandeja
+   de salida y la copia vieja con firmas sin migrar se quedan. */
+function limpiarSinPerder() {
+  try {
+    const legadoQueda = !!(window.Docs.legado && window.Docs.legado());
+    window.Docs.limpiarAlSalir({ conservarLegado: legadoQueda });
+  } catch (e) {}
+}
+
 function AdminLogin({ onLogin, lang, setLang }) {
   const L = LOGIN_T[lang === "en" ? "en" : "es"];
   const [correo, setCorreo] = useS("");
@@ -64,7 +73,7 @@ function AdminLogin({ onLogin, lang, setLang }) {
     const r = window.SASesion.perfilRapido && window.SASesion.perfilRapido();
     if (r && r.email) {
       enter(perfilDe(r, String(r.email).toLowerCase()));
-      window.SASesion.confirmar("", () => { try { localStorage.removeItem("spacio_admin_sesion_v1"); localStorage.removeItem("sa_session"); sessionStorage.removeItem("spacio_admin_user"); } catch (e) {} location.reload(); });
+      window.SASesion.confirmar("", () => { try { localStorage.removeItem("spacio_admin_sesion_v1"); localStorage.removeItem("sa_session"); sessionStorage.removeItem("spacio_admin_user"); } catch (e) {} limpiarSinPerder(); location.reload(); });
       return;
     }
     let vivo = true;
@@ -313,7 +322,17 @@ function DocDetail({ doc, onClose, onChange, onSign, onToast, onDuplicar, lang, 
   if (!doc) return null;
   const est = F.ESTADOS[doc.estado] || F.ESTADOS.borrador;
   const cerrado = doc.estado === "cancelado" || doc.estado === "anulado";
-  const act = (fn, msg) => { const d = fn(); onChange(d); if (d && window.SpacioSync) window.SpacioSync.push("actualizar", d); if (msg) onToast(msg); };
+  /* El servidor manda: cada acción espera su confirmación. Si no llega,
+     nada cambia y se dice. */
+  const S = window.SpacioSync;
+  const act = async (promesa, msg) => {
+    setBusy("Guardando…");
+    let r; try { r = await promesa; } catch (e) { r = { ok: false, error: String(e) }; }
+    setBusy("");
+    if (r && r.ok) { onChange(r.doc); if (msg) onToast(msg); }
+    else onToast("No se guardó (" + S.motivo(r) + "). Intenta de nuevo.");
+    return r;
+  };
   /* Reenviar/Reactivar tiene que volver a mandar el correo de firma, no solo
      anotarlo en el historial. Mismo enlace, misma plantilla. */
   /* El envío quedó guardado pero el correo no salió: se avisa arriba del
@@ -335,13 +354,13 @@ function DocDetail({ doc, onClose, onChange, onSign, onToast, onDuplicar, lang, 
     }
     const enviados = envios.filter((x) => x.ok).map((x) => x.email), fallidos = envios.filter((x) => !x.ok).map((x) => x.email);
     const ts = new Date().toISOString();
-    const d = F.update(doc.id, (dd) => {
+    const r = await F.cambiar(doc.id, (dd) => {
       dd.estado = "enviado"; dd.enviado = ts;
       dd.programado = Object.assign({}, dd.programado, { adelantado: ts });
       dd.correoFirma = { ts: ts, enviados: enviados, fallidos: fallidos, error: (envios.find((x) => !x.ok) || {}).error || "" };
       return F.log(dd, fallidos.length ? "El correo de firma NO salió para " + fallidos.join(", ") + ". Usa Reenviar." : "Envío adelantado: correo de firma enviado a " + enviados.join(", ") + ".");
     });
-    onChange(d); await S.push("actualizar", d);
+    if (r && r.ok) onChange(r.doc);
     setBusy("");
     onToast(fallidos.length ? "El correo NO salió para " + fallidos.join(", ") + "." : "Correo de firma enviado a " + enviados.join(", ") + ".");
   };
@@ -349,33 +368,28 @@ function DocDetail({ doc, onClose, onChange, onSign, onToast, onDuplicar, lang, 
     if (!confirm("¿Cancelar el envío programado? El documento queda en el registro como cancelado.")) return;
     setBusy("Cancelando…");
     let r; try { r = await window.SpacioSync.cancelarProgramado(doc.id); } catch (e) { r = { ok: false }; }
-    const d = F.cancel(doc.id, "Envío programado cancelado antes de salir");
-    onChange(d); if (d) await window.SpacioSync.push("actualizar", d);
+    const c = await F.cancel(doc.id, "Envío programado cancelado antes de salir");
+    if (c && c.ok) onChange(c.doc);
     setBusy("");
-    onToast(r && r.ok ? "Envío programado cancelado." : "Cancelado aquí, pero el servidor no confirmó. Revisa la hoja PROGRAMADOS.");
+    onToast(!(c && c.ok) ? "No se guardó la cancelación (" + S.motivo(c) + "). Intenta de nuevo."
+      : r && r.ok ? "Envío programado cancelado." : "Cancelado en el registro, pero el servidor no confirmó el correo programado. Revisa la hoja PROGRAMADOS.");
   };
-  const reenviar = () => {
-    const d = F.resend(doc.id);
-    onChange(d);
-    if (!window.SpacioSync) { onToast("Solicitud reenviada."); return; }
+  const reenviar = async () => {
     setBusy("Enviando…");
-    Promise.all([
-      window.SpacioSync.push("reenviar", d),
-      window.SpacioSync.correo("solicitudFirma", d),
-    ]).then(function (r) {
-      setBusy("");
-      const c = r[1];
-      if (window.Docs && window.Docs.update) {
-        window.Docs.update(d.id, function (dd) {
-          var to = (dd.firmantes || []).map(function (f) { return f.email; });
-          dd.correoFirma = { ts: new Date().toISOString(), enviados: c && c.ok ? to : [], fallidos: c && c.ok ? [] : to, error: (c && (c.error || c.reason)) || "" };
-          return dd;
-        });
-        onChange(window.Docs.get(d.id) || d);
-      }
-      onToast(c && c.ok ? "Correo reenviado a " + ((d.firmantes || []).map(function (f) { return f.email; }).join(", ") || d.firmanteEmail) + "."
-                        : "Se anotó el reenvío, pero el correo no salió: revisa el Web App en Setup.");
-    }).catch(function () { setBusy(""); onToast("Se anotó el reenvío, pero el correo no salió: revisa el Web App en Setup."); });
+    const r = await F.resend(doc.id);
+    if (!(r && r.ok)) { setBusy(""); onToast("No se reenvió (" + S.motivo(r) + "). Intenta de nuevo."); return; }
+    const d = r.doc;
+    onChange(d);
+    let c; try { c = await S.correo("solicitudFirma", d); } catch (e) { c = { ok: false, error: String(e) }; }
+    const to = (d.firmantes || []).map((f) => f.email);
+    const r2 = await F.cambiar(d.id, (dd) => {
+      dd.correoFirma = { ts: new Date().toISOString(), enviados: c && c.ok ? to : [], fallidos: c && c.ok ? [] : to, error: (c && (c.error || c.reason)) || "" };
+      return dd;
+    });
+    if (r2 && r2.ok) onChange(r2.doc);
+    setBusy("");
+    onToast(c && c.ok ? "Correo reenviado a " + (to.join(", ") || d.firmanteEmail) + "."
+                      : "Se anotó el reenvío, pero el correo no salió: revisa el Web App en Setup.");
   };
 
   return (
@@ -385,7 +399,7 @@ function DocDetail({ doc, onClose, onChange, onSign, onToast, onDuplicar, lang, 
           <div>
             <div className="sa-eyebrow">{doc.folio} · {window.SpacioT.categoria(lang, doc.categoria)}</div>
             <window.TituloEditable doc={doc} puede={gestion || !!(perms && perms.generar)}
-              onGuardar={(n) => { const d = F.rename(doc.id, n); if (d) { onChange(d); if (window.SpacioSync) window.SpacioSync.push("actualizar", d); onToast("Nombre actualizado."); } }} />
+              onGuardar={(n) => act(F.rename(doc.id, n), "Nombre actualizado.")} />
             <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
               <span className={"sa-badge " + est.cls}><i />{window.SpacioT.estado(lang, doc.estado)}</span>
               {!cerrado && !doc.firmaSpacio && !soloFirma && <span className="sa-badge pendiente"><i />Falta la firma de Spacio AM</span>}
@@ -420,7 +434,7 @@ function DocDetail({ doc, onClose, onChange, onSign, onToast, onDuplicar, lang, 
                 <span className="sa-row-v">
                   {gestion || (perms && perms.generar)
                     ? <window.PropiedadPicker value={doc.propiedadId}
-                        onChange={(p) => { const d = F.setPropiedad(doc.id, p); if (d) { onChange(d); if (window.SpacioSync) window.SpacioSync.push("actualizar", d); onToast(p ? "Vinculado a " + p.name + "." : "Vínculo quitado."); } }} />
+                        onChange={(p) => act(F.setPropiedad(doc.id, p), p ? "Vinculado a " + p.name + "." : "Vínculo quitado.")} />
                     : (doc.propiedad || "Sin propiedad vinculada")}
                 </span>
               </div>
@@ -475,20 +489,25 @@ function DocDetail({ doc, onClose, onChange, onSign, onToast, onDuplicar, lang, 
                 const m = prompt("Motivo de la cancelación (opcional):", "");
                 if (m === null) return;
                 if (doc.programado && window.SpacioSync) window.SpacioSync.cancelarProgramado(doc.id);
-                act(() => F.cancel(doc.id, m), "Envío cancelado.");
+                act(F.cancel(doc.id, m), "Envío cancelado.");
               }}>Cancelar</button>
             )}
             {gestion && doc.estado !== "anulado" && (
               <button className="sa-btn danger sa-tip" data-tip="Deja el documento sin efecto de forma permanente. No se puede reactivar, pero queda en el registro como evidencia." onClick={() => {
                 const m = prompt("Motivo para anular el documento (opcional):", "");
                 if (m === null) return;
-                act(() => F.voidDoc(doc.id, m), "Documento anulado.");
+                act(F.voidDoc(doc.id, m), "Documento anulado.");
               }}>Anular</button>
             )}
             {gestion && (
               <button className="sa-btn danger sa-tip" data-tip="Borra la fila del registro: no queda rastro del documento. Úsalo solo para pruebas o capturas erróneas." onClick={() => {
                 if (!confirm("¿Eliminar este documento del registro? No se puede deshacer.")) return;
-                F.remove(doc.id); onChange(null); onToast("Documento eliminado.");
+                setBusy("Eliminando…");
+                S.borrar(doc).then((r) => {
+                  setBusy("");
+                  if (r && r.ok) { F.remove(doc.id); onChange(null); onToast("Documento eliminado."); }
+                  else onToast("No se eliminó (" + S.motivo(r) + "). Intenta de nuevo.");
+                });
               }}>Eliminar</button>
             )}
           </div>
@@ -539,6 +558,19 @@ function DocsPanel({ onSign, onToast, onNuevo, onDuplicar, refreshKey, lang, use
   const [cat, setCat] = useS("todas");
   const [sel, setSel] = useS(null);
   const [tick, setTick] = useS(0);
+  /* La foto solo sirve para ver la lista: para abrir o duplicar se pide el
+     documento completo al servidor (nada se decide con la foto). */
+  const [abriendo, setAbriendo] = useS(null);
+  const abrir = (d, fn) => {
+    if (!d._foto) { fn(F.getCompleto(d.id) || d); return; }
+    setAbriendo(d.id);
+    window.SpacioSync.getDoc(d.id).then((r) => {
+      setAbriendo(null);
+      if (r && r.ok) fn(r.doc);
+      else onToast("No se pudo abrir el documento (" + window.SpacioSync.motivo(r) + ").");
+    });
+  };
+  const copia = F.esCopia && F.esCopia();
   const docs = useM(() => {
     const todos = F.all();
     if (staff) return todos;
@@ -572,6 +604,7 @@ function DocsPanel({ onSign, onToast, onNuevo, onDuplicar, refreshKey, lang, use
           <div className="sa-eyebrow">{staff ? T("admin") : "Mis documentos"}</div>
           <h1 className="sa-h1">{T("docs_title")}</h1>
           <p className="sa-sub">{staff ? T("docs_sub") : "Los documentos asociados a tu correo, con su estado y tu copia firmada cuando esté lista."}</p>
+          {(copia || abriendo) && docs.length > 0 && <p className="sa-sub" style={{ marginTop: 6 }}>{abriendo ? "Abriendo…" : "actualizando…"}</p>}
         </div>
         {perms && perms.generar && <button className="sa-btn dark" onClick={onNuevo}>{T("new_doc")}</button>}
       </div>
@@ -606,10 +639,10 @@ function DocsPanel({ onSign, onToast, onNuevo, onDuplicar, refreshKey, lang, use
         </div>
       </div>
 
-      <DocsTable docs={filtered} onOpen={setSel} onDuplicar={onDuplicar} lang={lang} cargando={cargando && !q.trim() && estado === "todos" && cat === "todas"} />
+      <DocsTable docs={filtered} onOpen={(d) => abrir(d, setSel)} onDuplicar={onDuplicar ? (d) => abrir(d, onDuplicar) : null} lang={lang} cargando={cargando && !q.trim() && estado === "todos" && cat === "todas"} />
 
       {sel && (
-        <DocDetail doc={F.get(sel.id)} lang={lang} perms={perms} staff={staff} user={user} onClose={() => setSel(null)} onSign={onSign} onToast={onToast}
+        <DocDetail doc={F.getCompleto(sel.id) || sel} lang={lang} perms={perms} staff={staff} user={user} onClose={() => setSel(null)} onSign={onSign} onToast={onToast}
           onDuplicar={onDuplicar ? (d) => { setSel(null); onDuplicar(d); } : null}
           onChange={(d) => { setSel(d); setTick((t) => t + 1); }} />
       )}
@@ -623,7 +656,7 @@ function MailPanel({ lang }) {
   const M = window.SpacioEmails;
   const F = window.Docs;
   const [sel, setSel] = useS("solicitudFirma");
-  const doc = F.all()[0] || null;
+  const doc = F.all().filter((x) => !x._foto)[0] || null;
   const d = doc ? {
     nombre: doc.firmanteNombre, correo: doc.firmanteEmail, documento: doc.tipoLabel, folio: doc.folio,
     contraparte: doc.contraparteNombre, certificado: doc.certificado || "SAM-FE-000128-A1F4",
@@ -673,8 +706,9 @@ function SignPreviewPanel({ onSign, lang }) {
   const T = (k) => window.SpacioT.t(lang, k);
   const F = window.Docs;
   const [paso, setPaso] = useS(1);
-  const pendiente = F.all().filter((d) => d.estado === "enviado" || d.estado === "visto" || d.estado === "parcial")[0];
-  const real = pendiente || F.all()[0];
+  const completos = F.all().filter((d) => !d._foto);
+  const pendiente = completos.filter((d) => d.estado === "enviado" || d.estado === "visto" || d.estado === "parcial")[0];
+  const real = pendiente || completos[0];
   /* La vista previa trabaja siempre sobre una copia en memoria (nada se
      guarda). Solo cuando el documento real ya está firmado, el paso 3
      muestra el real para que el certificado y la descarga sean veraces. */
@@ -710,7 +744,7 @@ function DBPanel({ onToast, lang }) {
   const T = (k) => window.SpacioT.t(lang, k);
   const S = window.SpacioSync;
   const F = window.Docs;
-  const docs = F.all();
+  const docs = F.all().filter((d) => !d._foto);
   const [hoja, setHoja] = useS(0);
   const [ep, setEp] = useS(S.endpoint());
   const H = S.HOJAS[hoja];
@@ -922,12 +956,17 @@ function AdminApp() {
       if (r.noExiste) { setCargaFirma((c) => Object.assign({}, c, { estado: "listo" })); setSincronizado(true); return; }
       /* No hubo respuesta: se dice, con opción de reintentar. Si ya hay copia
          local, se usa. */
-      if (window.Docs.get(firmarId)) { setCargaFirma((c) => Object.assign({}, c, { estado: "listo" })); setSincronizado(true); return; }
+      if (window.Docs.getCompleto(firmarId)) { setCargaFirma((c) => Object.assign({}, c, { estado: "listo" })); setSincronizado(true); return; }
       setCargaFirma((c) => Object.assign({}, c, { estado: "error", error: r.error }));
     });
     /* La firma que quedó en la bandeja de salida de este teléfono se sube
        en segundo plano, sin bloquear la pantalla. */
-    S.flush().catch(() => {});
+    S.flush().then(() => {
+      /* La copia vieja de este teléfono (contratos completos) se migra y se
+         borra. En el teléfono del firmante suele ser solo su documento. */
+      const L = window.Docs.legado && window.Docs.legado();
+      if (L && L.length <= 5) return S.migrarLegado();
+    }).catch(() => {});
     return () => { vivo = false; clearTimeout(lento); };
   }, [firmarId, cargaFirma.intento]);
 
@@ -968,6 +1007,25 @@ function AdminApp() {
   const dismissNoti = (n) => setNotiDismiss((p) => { const u = Object.assign({}, p, { [n.id]: 1 }); persistNoti("sam:contratosNotiDismiss", u); return u; });
   const snoozeNoti = (n) => setNotiSnooze((p) => { const u = Object.assign({}, p, { [n.id]: Date.now() + 86400000 }); persistNoti("sam:contratosNotiSnooze", u); return u; });
 
+  /* La foto de la lista es por persona: se lee al instante con su correo. */
+  if (user && !firmarId && window.Docs.setUsuario) window.Docs.setUsuario(user.email);
+  /* Cerrar sesión: lo pendiente intenta subir; si queda algo, se avisa y se
+     queda en el teléfono (solo las firmas, sin contratos) hasta que suba. */
+  const [saliendo, setSaliendo] = useS(false);
+  const cerrarSesion = async () => {
+    const S = window.SpacioSync;
+    setSaliendo(true);
+    let r = { pendientes: 0 };
+    try { r = await S.salir(); } catch (e) { limpiarSinPerder(); }
+    setSaliendo(false);
+    if (r && (r.pendientes || r.legado)) {
+      const n = r.pendientes || 0;
+      window.alert((n === 1 ? "Hay 1 firma de este teléfono que todavía no llega" : n > 1 ? "Hay " + n + " firmas de este teléfono que todavía no llegan" : "Hay firmas de antes en este teléfono que todavía no se confirman") +
+        " al registro. Se quedan guardadas aquí hasta que suban solas, la próxima vez que abras Docs con internet.");
+    }
+    setUser(null);
+  };
+
   useE(() => {
     try {
       if (user) localStorage.setItem(SESION_KEY, JSON.stringify({ user: user, exp: Date.now() + SESION_DIAS * 86400000 }));
@@ -978,7 +1036,7 @@ function AdminApp() {
 
   /* Ruta pública: cualquiera con el enlace puede leer y firmar, sin usuario. */
   if (firmarId) {
-    const d = window.Docs.get(firmarId);
+    const d = window.Docs.getCompleto(firmarId);
     /* El documento puede venir de la otra app: se espera a la hoja antes
        de dar el enlace por vencido. */
     if (!d && cargaFirma.estado === "error") {
@@ -1089,7 +1147,7 @@ function AdminApp() {
       {menuOk && <MenuCompartido tab={tabActual} tabs={tabs} lang={lang} onNavigate={irA} onFallo={() => setMenuOk(false)} />}
       <AdminTopBar user={user} lang={lang} setLang={setLang} notiTotal={notis.length}
         onNotiOpen={() => setNotiOpen(true)} onAccount={() => setTab("cuenta")} onSetup={() => setTab("setup")}
-        onLogout={() => setUser(null)} />
+        onLogout={() => { if (!saliendo) cerrarSesion(); }} />
       <NotiCenter open={notiOpen} onClose={() => setNotiOpen(false)} notis={notis} onDismiss={dismissNoti} onSnooze={snoozeNoti} />
       <NotiPush notis={notis} storeKey="sam:contratosNotiSeen" onOpen={() => setNotiOpen(true)} />
       {/* Barra propia de Docs: respaldo si el menú compartido no cargó. */}

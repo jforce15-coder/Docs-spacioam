@@ -106,5 +106,8 @@ aparece "Ver mis documentos" y entra al panel viendo solo los documentos asociad
 
 ## 6 · Datos de prueba
 
-El registro vive en `localStorage` (`spacio_docs_v1`). Para dejar el ambiente limpio: eliminar los
-documentos de prueba desde su detalle, o borrar esa clave en el navegador.
+El registro vive en la hoja `DOCUMENTOS` (el servidor manda). En el teléfono solo quedan la foto de la
+lista (`sa_foto:docs:1:<correo>`, sin DPI, vence a las 24 h), las firmas guardadas para reusar
+(`sa_firma:1:<correo>`) y las firmas que todavía no suben (`spacio_sync_bandeja_v2`, sin el contrato).
+Las dos primeras se borran al cerrar sesión; la bandeja, solo cuando sube. Para dejar el ambiente
+limpio: eliminar los documentos de prueba desde su detalle.

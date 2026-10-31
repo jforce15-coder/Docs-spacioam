@@ -1,13 +1,20 @@
 /* ══════════════════════════════════════════════════════════════
    Spacio AM — Registro de documentos enviados a firma.
-   Persistencia local (localStorage) con el mismo modelo que la
-   hoja CONTRATOS/FIRMAS del ecosistema: un documento, uno o dos
-   firmantes, historial y certificado.
+   El servidor manda: la hoja DOCUMENTOS es el registro. Aquí los
+   documentos completos viven SOLO en memoria mientras la página está
+   abierta. En el teléfono queda, como mucho:
+   · la «foto» de la lista (sa_foto:docs:1:<correo>): id, folio,
+     título, estado, fechas y nombre del firmante. Nada de DPI ni del
+     contrato. Vence a las 24 h y se borra al cerrar sesión;
+   · las firmas que todavía no suben (bandeja de salida, sheets-sync.js);
+   · la firma guardada de cada persona para reusar (sa_firma:1:<correo>).
    ══════════════════════════════════════════════════════════════ */
 (function () {
   "use strict";
-  var KEY = "spacio_docs_v1";
+  var LEGADO = "spacio_docs_v1";     /* copia vieja con contratos completos: se migra y se borra */
   var SEQ = "spacio_docs_seq_v1";
+  var FOTO_V = "sa_foto:docs:1:";
+  var FOTO_MS = 864e5;               /* 24 h */
 
   var ESTADOS = {
     borrador:  { label: "Borrador",           cls: "borrador" },
@@ -45,12 +52,79 @@
     return "Servicios";
   };
 
-  function read() {
-    try { return JSON.parse(localStorage.getItem(KEY) || "[]"); } catch (e) { return []; }
+  /* ── Memoria y foto ─────────────────────────────────────── */
+  var mem = [];          /* documentos completos (o de la foto, con _foto) */
+  var usuario = "";      /* correo de quien tiene sesión: la foto es por persona */
+  var copia = false;     /* true mientras la lista sale de la foto («actualizando…») */
+
+  function clonar(d) { return d ? JSON.parse(JSON.stringify(d)) : d; }
+  function read() { return mem.slice(); }
+  function write(list) { mem = list.slice(); fotoGuardar(); return mem; }
+
+  /* Lo único que la foto guarda de cada documento. */
+  function resumen(d) {
+    return {
+      id: d.id, folio: d.folio, tipo: d.tipo, tipoLabel: d.tipoLabel, nombre: d.nombre || "",
+      categoria: d.categoria, estado: d.estado, creado: d.creado, enviado: d.enviado,
+      firmanteNombre: d.firmanteNombre || "",
+      firmantes: (d.firmantes || []).map(function (f) { return { id: f.id, nombre: f.nombre, firma: f.firma ? { ts: f.firma.ts } : null }; }),
+      firmaSpacio: d.firmaSpacio ? { ts: d.firmaSpacio.ts } : null,
+      soloFirmante: d.soloFirmante, soloSpacio: d.soloSpacio,
+      programado: d.programado && d.programado.sendAt ? { sendAt: d.programado.sendAt } : null,
+      _foto: true,
+    };
   }
-  function write(list) {
-    try { localStorage.setItem(KEY, JSON.stringify(list)); } catch (e) {}
-    return list;
+  function fotoClave() { return usuario ? FOTO_V + usuario : ""; }
+  function fotoGuardar() {
+    var k = fotoClave();
+    if (!k || copia) return;
+    try { localStorage.setItem(k, JSON.stringify({ t: Date.now(), datos: mem.filter(function (d) { return d && !d.demo; }).map(resumen) })); } catch (e) {}
+  }
+  function claves(pref) {
+    var out = [];
+    try { for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k && k.indexOf(pref) === 0) out.push(k); } } catch (e) {}
+    return out;
+  }
+  /* Fotos vencidas (de cualquier persona) se borran al abrir. */
+  function fotoBorrarVencidas() {
+    claves("sa_foto:docs:").forEach(function (k) {
+      var f = null;
+      try { f = JSON.parse(localStorage.getItem(k) || "null"); } catch (e) {}
+      if (k.indexOf(FOTO_V) !== 0 || !f || !f.t || Date.now() - f.t >= FOTO_MS) { try { localStorage.removeItem(k); } catch (e) {} }
+    });
+  }
+  function setUsuario(email) {
+    var u = String(email || "").trim().toLowerCase();
+    if (u === usuario) return;
+    usuario = u;
+    fotoBorrarVencidas();
+    if (!u || mem.length) return;
+    var f = null;
+    try { f = JSON.parse(localStorage.getItem(fotoClave()) || "null"); } catch (e) {}
+    if (f && f.t && Date.now() - f.t < FOTO_MS && Array.isArray(f.datos) && f.datos.length) {
+      mem = f.datos.map(function (d) { d._foto = true; return d; });
+      copia = true;
+      emit();
+    }
+  }
+  function esCopia() { return copia; }
+
+  /* La copia vieja (antes de este cambio el teléfono guardaba los contratos
+     completos). sheets-sync.js la migra y llama a borrarLegado() solo cuando
+     confirma que no queda nada sin subir. */
+  function legado() {
+    try { var l = JSON.parse(localStorage.getItem(LEGADO) || "null"); return Array.isArray(l) ? l : null; } catch (e) { return null; }
+  }
+  function borrarLegado() { try { localStorage.removeItem(LEGADO); } catch (e) {} }
+
+  /* Al cerrar sesión: fuera la foto, las firmas guardadas y los borradores
+     del generador (llevan DPI). La bandeja de salida NO se toca. */
+  function limpiarAlSalir(opts) {
+    mem = []; copia = false; usuario = "";
+    claves("sa_foto:docs:").concat(claves(FIRMA_PREF)).forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
+    ["spacio_am_contracts_v1", "spacio_custom_v1", FKEY].forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
+    if (!(opts && opts.conservarLegado)) borrarLegado();
+    emit();
   }
   function nextFolio() {
     var n = 0;
@@ -88,15 +162,18 @@
     return read().sort(function (a, b) { return (b.creado || "").localeCompare(a.creado || ""); });
   }
   function get(id) { return read().filter(function (d) { return d.id === id; })[0] || null; }
+  /* El documento completo, o null si solo está en la foto. */
+  function getCompleto(id) { var d = get(id); return d && !d._foto ? d : null; }
 
   function log(doc, texto) {
     doc.historial = (doc.historial || []).concat([{ texto: texto, ts: nowISO() }]);
     return doc;
   }
 
-  /* Crea el documento y lo deja "enviado a firma".
+  /* Arma el documento nuevo ("enviado a firma") SIN guardarlo: quien lo
+     llama lo crea en el servidor (SpacioSync.crear) y solo entonces existe.
      payload.firmantes = [{nombre, email}] — 1 o 2 por la otra parte. */
-  function create(payload) {
+  function nuevo(payload) {
     var folio = nextFolio();
     var fs = (payload.firmantes && payload.firmantes.length
       ? payload.firmantes
@@ -140,11 +217,10 @@
     if (SOLO_SPACIO[payload.tipo]) { /* sin firmantes externos: no hay solicitud de firma */ }
     else if (payload.programado) log(doc, "Envío programado para el " + payload.programado.etiqueta + " a " + fs.map(function (f) { return f.email; }).join(" y "));
     else log(doc, "Solicitud de firma enviada a " + fs.map(function (f) { return f.email; }).join(" y "));
-    write(read().concat([doc]));
-    emit();
     return doc;
   }
 
+  /* Cambio SOLO en memoria (p. ej. «visto» en el teléfono del firmante). */
   function update(id, fn) {
     var list = read();
     var out = null;
@@ -160,18 +236,35 @@
 
   /* Nombre visible del documento (lista, correos, PDF). */
   function titulo(d) { return (d && (d.nombre || d.tipoLabel)) || "Documento"; }
-  function rename(id, nombre) {
-    return update(id, function (d) {
-      var n = String(nombre || "").trim();
-      var antes = titulo(d);
-      d.nombre = n === d.tipoLabel ? "" : n;
-      if (titulo(d) === antes) return d;
-      return log(d, "Documento renombrado: “" + antes + "” → “" + titulo(d) + "”");
+
+  /* ── Acciones: el servidor manda ───────────────────────────
+     Cada acción parte del documento completo (si solo está en la foto,
+     primero se pide al servidor), calcula el cambio y lo manda con
+     SpacioSync.cambiar: el servidor aplica SOLO esos campos sobre su fila.
+     Devuelve una promesa { ok, doc } con el documento como quedó en la hoja. */
+  function cambiar(id, fn) {
+    var S = window.SpacioSync;
+    if (!S) return Promise.resolve({ ok: false, error: "sin_sync" });
+    var base = getCompleto(id);
+    var traer = base ? Promise.resolve({ ok: true, doc: base }) : S.getDoc(id);
+    return traer.then(function (r) {
+      if (!r || !r.ok || !r.doc) return { ok: false, error: (r && r.error) || "no_encontrado" };
+      var antes = r.doc;
+      var despues = fn(clonar(antes)) || clonar(antes);
+      return S.cambiar(antes, despues);
     });
   }
+  function tRename(d, nombre) {
+    var n = String(nombre || "").trim();
+    var antes = titulo(d);
+    d.nombre = n === d.tipoLabel ? "" : n;
+    if (titulo(d) === antes) return d;
+    return log(d, "Documento renombrado: “" + antes + "” → “" + titulo(d) + "”");
+  }
+  function rename(id, nombre) { return cambiar(id, function (d) { return tRename(d, nombre); }); }
   /* Vínculo con una propiedad de EPI (co-hosting). p = { id, name } o null. */
   function setPropiedad(id, p) {
-    return update(id, function (d) {
+    return cambiar(id, function (d) {
       var antes = d.propiedad || "";
       d.propiedadId = p ? String(p.id || "") : "";
       d.propiedad = p ? String(p.name || "") : "";
@@ -180,6 +273,7 @@
     });
   }
 
+  /* Solo en memoria: el servidor anota «visto» al recibir la firma. */
   function markVisto(id) {
     return update(id, function (d) {
       if (d.estado !== "enviado") return d;
@@ -207,167 +301,144 @@
     return !!SOLO_FIRMANTE[d.tipo];
   }
 
-  /* Firma de un firmante de la otra parte. */
-  function signFirmante(id, firmanteId, firma) {
-    return update(id, function (d) {
-      var nombre = "";
-      d.firmantes = (d.firmantes || []).map(function (f) {
-        if (f.id !== firmanteId) return f;
-        nombre = f.nombre;
-        return Object.assign({}, f, {
-          firma: { img: firma.img, metodo: firma.metodo, ts: nowISO(), ip: firma.ip || "registrada al firmar" },
-        });
-      });
-      d.firmaFirmante = d.firmantes[0] && d.firmantes[0].firma
-        ? Object.assign({ nombre: d.firmantes[0].nombre, correo: d.firmantes[0].email }, d.firmantes[0].firma)
-        : null;
-      log(d, "Firmado por " + (nombre || d.firmanteNombre));
-      /* Queda cerrado cuando ya firmaron todos, sin importar el orden. */
-      if (faltanFirmas(d) === 0 && (soloFirmante(d) || d.firmaSpacio)) return cerrar(d);
-      d.estado = "parcial";
-      return d;
-    });
-  }
-
   function faltanFirmas(d) {
     return (d.firmantes || []).filter(function (f) { return !f.firma; }).length;
   }
 
-  /* Cierre: certificado + acuse, una sola vez y venga de donde venga. */
-  function cerrar(d) {
+  /* Cierre: certificado + acuse, una sola vez y venga de donde venga.
+     Las mismas reglas están en el servidor (aplicarFirma_ en Código.js). */
+  function cerrar(d, ts) {
     d.estado = "firmado";
     d.certificado = "SAM-FE-" + d.folio.replace("SAM-", "") + "-" +
       hash(d.folio + d.firmanteEmail + ((d.firmantes || [])[0] && (d.firmantes || [])[0].firma ? d.firmantes[0].firma.ts : "")).slice(0, 4);
-    return log(d, soloSpacio(d) ? "Carta firmada por Spacio AM" : soloFirmante(d) ? "Copia firmada enviada al firmante" : "Copia firmada enviada a ambas partes");
+    d.historial = (d.historial || []).concat([{ texto: soloSpacio(d) ? "Carta firmada por Spacio AM" : soloFirmante(d) ? "Copia firmada enviada al firmante" : "Copia firmada enviada a ambas partes", ts: ts || nowISO() }]);
+    return d;
   }
 
-  /* Firma por parte de Spacio AM → puede ir antes o después. */
-  function signSpacio(id, firma) {
-    return update(id, function (d) {
-      d.firmaSpacio = { nombre: d.contraparteNombre, correo: d.contraparteEmail, img: (firma && firma.img) || null, metodo: (firma && firma.metodo) || "typed", ts: nowISO(), ip: "registrada al firmar" };
-      /* Spacio AM puede firmar antes que la otra parte: solo queda
-         "firmado" cuando ya no falta ninguna firma. */
-      log(d, "Firmado por " + d.contraparteNombre + " (Spacio AM)");
+  /* Aplica una firma a una copia del documento (no guarda nada).
+     f = { parte: "spacio" } o { firmanteId }, con f.firma = { img, metodo, ts }.
+     Si esa firma ya estaba, devuelve el documento igual. Lo usan la bandeja
+     de salida (para mostrar la firma pendiente) y el servidor hace lo mismo. */
+  function aplicarFirma(doc, f) {
+    var d = clonar(doc);
+    var fi = f.firma || {};
+    var ts = fi.ts || nowISO();
+    if (f.parte === "spacio") {
+      if (d.firmaSpacio) return d;
+      d.firmaSpacio = { nombre: d.contraparteNombre, correo: d.contraparteEmail, img: fi.img || null, metodo: fi.metodo || "typed", ts: ts, ip: "registrada al firmar" };
+      d.historial = (d.historial || []).concat([{ texto: "Firmado por " + d.contraparteNombre + " (Spacio AM)", ts: ts }]);
       if (faltanFirmas(d) > 0) { d.estado = "parcial"; return d; }
-      return cerrar(d);
+      return cerrar(d, ts);
+    }
+    var nombre = "", ya = false, hay = false;
+    d.firmantes = (d.firmantes || []).map(function (x) {
+      if (x.id !== f.firmanteId) return x;
+      hay = true;
+      if (x.firma) { ya = true; return x; }
+      nombre = x.nombre;
+      return Object.assign({}, x, { firma: { img: fi.img, metodo: fi.metodo, ts: ts, ip: fi.ip || "registrada al firmar" } });
     });
+    if (!hay || ya) return d;
+    d.firmaFirmante = d.firmantes[0] && d.firmantes[0].firma
+      ? Object.assign({ nombre: d.firmantes[0].nombre, correo: d.firmantes[0].email }, d.firmantes[0].firma)
+      : null;
+    if (!d.visto) d.visto = ts;
+    d.historial = (d.historial || []).concat([{ texto: "Firmado por " + (nombre || d.firmanteNombre), ts: ts }]);
+    /* Queda cerrado cuando ya firmaron todos, sin importar el orden. */
+    if (faltanFirmas(d) === 0 && (soloFirmante(d) || d.firmaSpacio)) return cerrar(d, ts);
+    d.estado = "parcial";
+    return d;
   }
 
   function cancel(id, motivo) {
-    return update(id, function (d) {
+    return cambiar(id, function (d) {
       d.estado = "cancelado"; d.motivo = motivo || "";
       return log(d, "Envío cancelado" + (motivo ? " · " + motivo : ""));
     });
   }
   function voidDoc(id, motivo) {
-    return update(id, function (d) {
+    return cambiar(id, function (d) {
       d.estado = "anulado"; d.motivo = motivo || "";
       return log(d, "Documento anulado" + (motivo ? " · " + motivo : ""));
     });
   }
+  /* Quita el documento de la memoria (después de borrarlo en el servidor). */
   function remove(id) {
-    write(read().filter(function (d) { return d.id !== id; }));
+    mem = mem.filter(function (d) { return d.id !== id; });
+    fotoGuardar(); emit();
   }
   function resend(id) {
-    return update(id, function (d) {
+    return cambiar(id, function (d) {
       d.enviado = nowISO();
       if (d.estado === "cancelado") d.estado = "enviado";
       return log(d, "Solicitud reenviada a " + d.firmanteEmail);
     });
   }
 
-  /* ── Firmas guardadas por usuario ─────────────────────────
+  /* ── Firmas guardadas por persona ─────────────────────────
      Al firmar se pregunta si desea guardar la firma; si acepta,
-     el siguiente contrato solo requiere presionar "Firmar".   */
+     el siguiente contrato solo requiere presionar "Firmar".
+     Una llave por persona (sa_firma:1:<correo>), solo la imagen de la
+     firma; se borran al cerrar sesión. La llave vieja con todas juntas
+     (spacio_firmas_v1) se reparte una vez y se borra.               */
   var FKEY = "spacio_firmas_v1";
-  function firmasRead() { try { return JSON.parse(localStorage.getItem(FKEY) || "{}"); } catch (e) { return {}; } }
+  var FIRMA_PREF = "sa_firma:1:";
+  function fClave(email) { return FIRMA_PREF + String(email || "").trim().toLowerCase(); }
+  (function migrarFirmas() {
+    try {
+      var vieja = localStorage.getItem(FKEY);
+      if (!vieja) return;
+      var o = JSON.parse(vieja) || {};
+      Object.keys(o).forEach(function (e) { if (e && o[e] && !localStorage.getItem(fClave(e))) localStorage.setItem(fClave(e), JSON.stringify(o[e])); });
+      localStorage.removeItem(FKEY);
+    } catch (e) {}
+  })();
   var Firmas = {
-    get: function (email) { return firmasRead()[String(email || "").toLowerCase()] || null; },
+    get: function (email) { try { return JSON.parse(localStorage.getItem(fClave(email)) || "null"); } catch (e) { return null; } },
     save: function (email, firma) {
-      var all = firmasRead();
-      all[String(email || "").toLowerCase()] = { img: firma.img, metodo: firma.metodo, ts: nowISO() };
-      try { localStorage.setItem(FKEY, JSON.stringify(all)); } catch (e) {}
-      return all[String(email || "").toLowerCase()];
+      var v = { img: firma.img, metodo: firma.metodo, ts: nowISO() };
+      try { localStorage.setItem(fClave(email), JSON.stringify(v)); } catch (e) {}
+      return v;
     },
-    remove: function (email) {
-      var all = firmasRead(); delete all[String(email || "").toLowerCase()];
-      try { localStorage.setItem(FKEY, JSON.stringify(all)); } catch (e) {}
+    remove: function (email) { try { localStorage.removeItem(fClave(email)); } catch (e) {} },
+    all: function () {
+      var out = {};
+      claves(FIRMA_PREF).forEach(function (k) { try { out[k.slice(FIRMA_PREF.length)] = JSON.parse(localStorage.getItem(k)); } catch (e) {} });
+      return out;
     },
-    all: firmasRead,
   };
   window.Firmas = Firmas;
-
-  /* ── Estado inicial coherente ─────────────────────────────
-     Si el registro está vacío, se siembra UN ejemplo pendiente
-     de firma (marcado como demo) para que el listado, los correos
-     y la vista previa de firma tengan datos que leer. Si quedó el
-     documento de prueba ya firmado, se devuelve a "enviado".      */
-  (function seed() {
-    if (window.SPACIO_DOCS_NO_SEED) return;
-    var list = read();
-    var demo = list.filter(function (d) { return d.demo || d.firmanteEmail === "gabriel@ejemplo.com"; })[0];
-    if (demo && list.length === 1 && (!demo.firmantes || !demo.seedV2)) {
-      demo.demo = true; demo.seedV2 = true; demo.estado = "enviado"; demo.visto = null;
-      demo.firmantes = [{ id: "f1", nombre: demo.firmanteNombre, email: demo.firmanteEmail, firma: null }];
-      demo.firmaFirmante = null; demo.firmaSpacio = null; demo.certificado = null; demo.motivo = "";
-      demo.historial = (demo.historial || []).slice(0, 2);
-      write(list);
-      return;
-    }
-    if (list.length) return;
-    var doc = create({
-      tipo: "emp_contratacion",
-      firmanteNombre: "GABRIEL ASTURIAS MOREIRA",
-      firmanteEmail: "gabriel@ejemplo.com",
-      data: {
-        empNombre: "GABRIEL ASTURIAS MOREIRA", empDPI: "3057 90773 0301", empEdad: "24",
-        empEstado: "Soltero(a)", empNacionalidad: "guatemalteco(a)", empProfesion: "Bachiller",
-        empDomicilio: "Jocotenango, Sacatepéquez", empCargo: "Happiness Hero", empSalario: "3,124.42",
-        empFechaInicio: "2026-08-01", empLugarTrabajo: "Km 77, RN-14, San Lorenzo El Cubo",
-        contratanteNombre: "JUAN FRANCISCO OVALLE LANUZA", contratanteEdad: "37",
-        contratanteEstado: "Casado", contratanteDPI: "1791 74304 0101",
-        fecha: new Date().toISOString().slice(0, 10), actaFecha: "30 de marzo de 2023",
-        actaNotario: "Irving Giovanni Tejada Escobar", regNumero: "697958", regFolio: "663", regLibro: "816",
-      },
-      edits: {},
-      mensaje: "",
-    });
-    update(doc.id, function (d) { d.demo = true; d.seedV2 = true; return d; });
-  })();
 
   var subs = [];
   function emit() { (subs || []).slice().forEach(function (f) { try { f(); } catch (e) {} }); }
   function onChange(fn) { subs = (subs || []).concat([fn]); return function () { subs = subs.filter(function (f) { return f !== fn; }); }; }
 
-  /* Reemplaza el registro local con lo que trae la hoja compartida.
-     Conserva los locales que la hoja todavía no conoce (folio nuevo). */
+  /* Reemplaza la memoria con lo que trae la hoja compartida (ya con las
+     firmas pendientes de la bandeja encima). Deja de ser la foto. */
   function replaceAll(remotos) {
-    if (!remotos || !remotos.length) { emit(); return read(); }
-    var byFolio = {};
-    remotos.forEach(function (d) { if (d && d.folio) byFolio[d.folio] = d; });
-    var locales = read().filter(function (d) { return !byFolio[d.folio]; });
-    var out = remotos.concat(locales);
-    write(out); emit();
-    return out;
+    mem = (remotos || []).filter(Boolean);
+    copia = false;
+    fotoGuardar(); emit();
+    return read();
   }
   function upsert(doc) {
-    if (!doc || !doc.folio) return null;
-    var list = read();
+    if (!doc || !doc.id) return null;
     var i = -1;
-    list.forEach(function (d, j) { if (d.folio === doc.folio) i = j; });
-    if (i < 0) list.push(doc); else list[i] = doc;
-    write(list); emit();
+    mem.forEach(function (d, j) { if (d.id === doc.id) i = j; });
+    if (i < 0) mem = mem.concat([doc]); else { mem = mem.slice(); mem[i] = doc; }
+    fotoGuardar(); emit();
     return doc;
   }
 
   window.Docs = {
     onChange: onChange, emit: emit, replaceAll: replaceAll, upsert: upsert,
     ESTADOS: ESTADOS, TIPO_LABEL: TIPO_LABEL, CATEGORIA: CATEGORIA,
-    all: all, get: get, create: create, update: update, remove: remove, resend: resend,
+    all: all, get: get, getCompleto: getCompleto, nuevo: nuevo, update: update, cambiar: cambiar, remove: remove, resend: resend,
     soloFirmante: soloFirmante, SOLO_FIRMANTE: SOLO_FIRMANTE, soloSpacio: soloSpacio, SOLO_SPACIO: SOLO_SPACIO,
     titulo: titulo, rename: rename, setPropiedad: setPropiedad, log: log,
-    markVisto: markVisto, signFirmante: signFirmante, signSpacio: signSpacio, faltanFirmas: faltanFirmas,
+    markVisto: markVisto, aplicarFirma: aplicarFirma, faltanFirmas: faltanFirmas,
     cancel: cancel, voidDoc: voidDoc,
+    setUsuario: setUsuario, esCopia: esCopia, legado: legado, borrarLegado: borrarLegado, limpiarAlSalir: limpiarAlSalir,
     fmtDate: fmtDate, fmtDateTime: fmtDateTime, relative: relative, hash: hash,
   };
 })();
