@@ -237,9 +237,12 @@ function AdminTopBar({ user, lang, setLang, notiTotal, onNotiOpen, onAccount, on
 }
 
 /* ─── Listado de documentos ───────────────────────────────── */
-function DocsTable({ docs, onOpen, onDuplicar, lang }) {
+function DocsTable({ docs, onOpen, onDuplicar, lang, cargando }) {
   const F = window.Docs;
   const T = (k) => window.SpacioT.t(lang, k);
+  /* Rápido de sentir (hub ds/velocidad.md, regla 2): mientras llega la hoja, las filas en gris;
+     «no hay documentos» solo cuando ya se sabe. */
+  if (!docs.length && cargando) return <div className="sa-esq" aria-label="Cargando documentos"><i className="c" /><i className="c" /><i className="c" /><i className="c" /></div>;
   if (!docs.length) return <div className="sa-table-wrap"><div className="sa-empty">{T("empty_docs")}</div></div>;
   return (
     <div className="sa-table-wrap">
@@ -523,7 +526,7 @@ function SyncPendiente() {
   );
 }
 
-function DocsPanel({ onSign, onToast, onNuevo, onDuplicar, refreshKey, lang, user, perms, staff }) {
+function DocsPanel({ onSign, onToast, onNuevo, onDuplicar, refreshKey, lang, user, perms, staff, cargando }) {
   const F = window.Docs;
   const T = (k) => window.SpacioT.t(lang, k);
   const P = window.SpacioPerms;
@@ -599,7 +602,7 @@ function DocsPanel({ onSign, onToast, onNuevo, onDuplicar, refreshKey, lang, use
         </div>
       </div>
 
-      <DocsTable docs={filtered} onOpen={setSel} onDuplicar={onDuplicar} lang={lang} />
+      <DocsTable docs={filtered} onOpen={setSel} onDuplicar={onDuplicar} lang={lang} cargando={cargando && !q.trim() && estado === "todos" && cat === "todas"} />
 
       {sel && (
         <DocDetail doc={F.get(sel.id)} lang={lang} perms={perms} staff={staff} user={user} onClose={() => setSel(null)} onSign={onSign} onToast={onToast}
@@ -1005,6 +1008,7 @@ function AdminApp() {
                 ? "Está tardando más de lo normal. Seguimos intentando."
                 : "Un momento, lo estamos trayendo del registro de Spacio AM."}
             </p>
+            <div className="sa-esq" aria-label="Cargando el documento" style={{ width: "100%", maxWidth: 620, textAlign: "left", marginTop: 8 }}><i className="t" /><i /><i /><i className="corta" /><i className="g" /><i /><i className="corta" /></div>
           </div>
         </div>
       );
@@ -1098,7 +1102,7 @@ function AdminApp() {
       )}
 
       {tabActual === "docs" && (
-        <DocsPanel refreshKey={refreshKey} lang={lang} user={user} perms={perms} staff={staff}
+        <DocsPanel refreshKey={refreshKey} lang={lang} user={user} perms={perms} staff={staff} cargando={!sincronizado}
           onNuevo={() => { setBaseGen(null); setTab("nuevo"); }} onToast={setToast}
           onDuplicar={perms && perms.generar ? (d) => { setBaseGen({ doc: d, key: d.id + ":" + Date.now() }); setTab("nuevo"); } : null} onSign={(d, ro) => setSigning({ doc: d, readOnly: !!ro })} />
       )}
