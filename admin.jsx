@@ -50,6 +50,10 @@ function AdminLogin({ onLogin, lang, setLang }) {
   const [err, setErr] = useS(false);
   const [busy, setBusy] = useS(false);
   const [needPass, setNeedPass] = useS(null);
+  /* El no se ve antes de leerlo (hub ds/movimiento.md, regla 4): el campo malo se sacude y queda en rojo hasta que vuelvas
+     a escribir; el texto del error va debajo. Una falla de red no sacude: el campo no está mal. */
+  const rCorreo = useR(null), rPass = useR(null);
+  const sacudir = (...rs) => { if (window.SAMov) rs.forEach((r) => window.SAMov.sacudir(r.current)); };
 
   const enter = (perfil) => onLogin(perfil);
   /* Sesión única desde el Hub: si hay sesión firmada (hub.spacioam.com/js/sa-sesion.js) y es válida, entra directo. */
@@ -82,22 +86,22 @@ function AdminLogin({ onLogin, lang, setLang }) {
     e.preventDefault();
     setErr(false);
     const c = correo.trim().toLowerCase();
-    if (!c || pass.length < 4) { setErr(true); return; }
+    if (!c || pass.length < 4) { setErr(true); sacudir(...(!c ? [rCorreo] : []), ...(pass.length < 4 ? [rPass] : [])); return; }
     setBusy(true);
     /* Antes, si el login fallaba (contraseña incorrecta, usuario inexistente o sin conexión) se entraba igual
        con un perfil local: cualquier correo con cualquier contraseña abría el panel. Ahora un fallo es un error. */
-    const falla = () => { setErr(true); setBusy(false); };
-    if (!window.SAAuth) { falla(); return; }
+    const falla = (red) => { setErr(true); setBusy(false); if (red !== true) sacudir(rCorreo, rPass); };
+    if (!window.SAAuth) { falla(true); return; }
     window.SAAuth.login(c, pass).then((r) => {
       if (r && r.ok && r.profile) { setBusy(false); enter(perfilDe(r.profile, c)); }
       else if (r && r.error === "needs_password" && r.profile) { setNeedPass(r.profile); setPass(""); setBusy(false); }
       else falla();
-    }).catch(falla);
+    }).catch(() => falla(true));
   };
 
   const createPass = (e) => {
     e.preventDefault();
-    if (!pass || pass.length < 6) { setErr(true); return; }
+    if (!pass || pass.length < 6) { setErr(true); sacudir(rPass); return; }
     setBusy(true);
     window.SAAuth.setInitialPassword(correo.trim().toLowerCase(), pass).then((r) => {
       if (r && r.ok) enter(perfilDe(r.profile, correo.trim().toLowerCase()));
@@ -144,13 +148,13 @@ function AdminLogin({ onLogin, lang, setLang }) {
 
           <label className="sa-field">
             <span>{L.user}</span>
-            <input value={correo} onChange={(e) => { setCorreo(e.target.value); setErr(false); }}
+            <input ref={rCorreo} value={correo} onChange={(e) => { setCorreo(e.target.value); setErr(false); }}
               placeholder={L.user_ph} autoCapitalize="none" autoCorrect="off" autoFocus />
           </label>
           <label className="sa-field">
             <span>{needPass ? L.newpass : L.pass}</span>
             <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
-              <input value={pass} type={show ? "text" : "password"} placeholder={L.pass_ph}
+              <input ref={rPass} value={pass} type={show ? "text" : "password"} placeholder={L.pass_ph}
                 onChange={(e) => { setPass(e.target.value); setErr(false); }} style={{ paddingRight: 46 }} />
               <button type="button" onClick={() => setShow((s) => !s)} aria-label={L.pass}
                 style={{ position: "absolute", right: 12, background: "transparent", border: "none", cursor: "pointer", color: "var(--fg-muted)", display: "flex", padding: 4 }}>

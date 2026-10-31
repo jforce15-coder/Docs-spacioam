@@ -25,11 +25,11 @@ function splitNombre(full) {
   return { pn: w[0], sn: w[1], pa: w[2], sa: w.slice(3).join(" ") };
 }
 
-function AccountField({ label, hint, value, onChange, type, placeholder }) {
+function AccountField({ label, hint, value, onChange, type, placeholder, campoRef }) {
   return (
     <label className="sa-field">
       <span>{label}</span>
-      <input value={value} type={type || "text"} placeholder={placeholder || ""} autoCapitalize="none"
+      <input ref={campoRef} value={value} type={type || "text"} placeholder={placeholder || ""} autoCapitalize="none"
         onChange={(e) => onChange(e.target.value)} />
       {hint && <em className="sa-field-hint">{hint}</em>}
     </label>
@@ -49,6 +49,7 @@ function AccountPanel({ user, lang, onUpdate, onToast }) {
   const [pass, setPass] = React.useState("");
   const [avatar, setAvatar] = React.useState(user.avatar || prof.avatar || "");
   const [err, setErr] = React.useState("");
+  const rEmail = React.useRef(null);
   const [saved, setSaved] = React.useState(false);
   const photoRef = React.useRef(null);
   const firma = window.Firmas.get(user.email);
@@ -74,7 +75,8 @@ function AccountPanel({ user, lang, onUpdate, onToast }) {
   };
 
   const guardar = () => {
-    if (!/.+@.+\..+/.test(email)) { setErr(T("acc_invalid")); return; }
+    /* El no se ve antes de leerlo (hub ds/movimiento.md, regla 4): el correo malo se sacude y queda en rojo, con su texto */
+    if (!/.+@.+\..+/.test(email)) { setErr(T("acc_invalid")); if (window.SAMov) window.SAMov.sacudir(rEmail.current); return; }
     setErr("");
     const name = [pn, sn, pa, sa].map((s) => (s || "").trim()).filter(Boolean).join(" ");
     saveProfile(user.email, { name: name, pn: pn.trim(), sn: sn.trim(), pa: pa.trim(), sa: sa.trim(), secondary: secondary.trim(), avatar: avatar });
@@ -122,7 +124,7 @@ function AccountPanel({ user, lang, onUpdate, onToast }) {
             <AccountField label={T("acc_pa")} value={pa} onChange={setPa} />
             <AccountField label={T("acc_sa")} value={sa} onChange={setSa} />
           </div>
-          <AccountField label={T("acc_email")} hint={T("acc_email_hint")} value={email} onChange={setEmail} type="email" placeholder="tu@spacioam.com" />
+          <AccountField label={T("acc_email")} hint={T("acc_email_hint")} value={email} onChange={(v) => { setEmail(v); setErr(""); }} type="email" placeholder="tu@spacioam.com" campoRef={rEmail} />
           <AccountField label={T("acc_secondary")} hint={T("acc_secondary_hint")} value={secondary} onChange={setSecondary} type="email" placeholder="alterno@correo.com" />
           <AccountField label={T("acc_pass")} hint={T("acc_pass_hint")} value={pass} onChange={setPass} type="password" placeholder="••••••••" />
           {err && <div className="sa-login-err">{err}</div>}

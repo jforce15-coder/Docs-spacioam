@@ -9,20 +9,44 @@ function PIcon({ name, size = 15, stroke = "currentColor" }) {
   return null;
 }
 
+/* La píldora viaja (hub ds/movimiento.md, regla 5): el marcador de la opción activa se desliza de una a otra.
+   La barra lleva bar (position: relative) y su botón activo data-on="1"; la píldora (pil) la mueve SAMov.pildora.
+   La primera vez se pone sin animar (no viaja desde la esquina). Sin SAMov (si no cargó), cada botón pinta su
+   marcador como antes: mov dice cuál de los dos va. */
+function usePildora(clave) {
+  const bar = React.useRef(null), pil = React.useRef(null), puesta = React.useRef(false);
+  const mov = !!window.SAMov;
+  const poner = (quieto) => {
+    const b = bar.current, p = pil.current; if (!b || !p || !window.SAMov) return;
+    const a = b.querySelector('[data-on="1"]'); if (!a || !a.offsetWidth) return;   // oculta: espera a verse
+    if (quieto || !puesta.current) { p.style.transition = "none"; window.SAMov.pildora(b, a); void p.offsetWidth; p.style.transition = ""; puesta.current = true; }
+    else window.SAMov.pildora(b, a);
+  };
+  React.useLayoutEffect(() => { poner(false); }, [clave, mov]);
+  React.useEffect(() => {
+    const b = bar.current; if (!b || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => poner(true)); ro.observe(b);
+    return () => ro.disconnect();
+  }, [mov]);
+  return { bar, pil, mov };
+}
+
 function PanelSeg({ options, value, onChange, size = "md" }) {
   const pad = size === "sm" ? "7px 12px" : "9px 16px";
   const fs = size === "sm" ? 10.5 : 11;
+  const pd = usePildora(value);
   return (
-    <div style={{ display: "inline-flex", padding: 3, background: "var(--beige-soft)", borderRadius: 999, gap: 2 }}>
+    <div ref={pd.bar} style={{ position: "relative", display: "inline-flex", padding: 3, background: "var(--beige-soft)", borderRadius: 999, gap: 2 }}>
+      {pd.mov && <i ref={pd.pil} className="sa-pildora" aria-hidden="true" style={{ position: "absolute", left: 0, top: 0, zIndex: 0, pointerEvents: "none", background: "var(--alabaster)", borderRadius: 999, boxShadow: "var(--shadow-xs)" }} />}
       {options.map((o) => {
-        const active = o.value === value;
+        const active = o.value === value, fondo = active && !pd.mov;
         return (
-          <button key={o.value} type="button" onClick={() => onChange(o.value)} style={{
-            border: "none", cursor: "pointer", padding: pad, borderRadius: 999,
+          <button key={o.value} type="button" data-on={active ? "1" : undefined} onClick={() => onChange(o.value)} style={{
+            position: "relative", zIndex: 1, border: "none", cursor: "pointer", padding: pad, borderRadius: 999,
             fontFamily: "var(--sans)", fontSize: fs, fontWeight: 500, letterSpacing: "0.12em", textTransform: "uppercase",
-            background: active ? "var(--alabaster)" : "transparent",
+            background: fondo ? "var(--alabaster)" : "transparent",
             color: active ? "var(--ink)" : "var(--earth)",
-            boxShadow: active ? "var(--shadow-xs)" : "none",
+            boxShadow: fondo ? "var(--shadow-xs)" : "none",
             transition: "all .18s var(--ease)", whiteSpace: "nowrap",
           }}>{o.label}</button>
         );
@@ -107,4 +131,4 @@ function PanelSelect({ value, options, onChange, icon, minWidth = 240, searchabl
   );
 }
 
-Object.assign(window, { PanelSelect, PanelSeg, PIcon });
+Object.assign(window, { PanelSelect, PanelSeg, PIcon, usePildora });
