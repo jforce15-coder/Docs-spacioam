@@ -762,6 +762,19 @@ details[open] summary { color: var(--ink); }
 .sheet-col strong, .measure-col strong { font-weight: 600; color: var(--ink); }
 .blk-ph { color: var(--peach); }
 
+/* Aviso de datos sin llenar, encima de «Enviar para firma». */
+.faltan-aviso {
+  margin: 18px 0 0;
+  letter-spacing: 0.01em;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--peach) 12%, transparent);
+  border-left: 3px solid var(--peach);
+  border-radius: 6px;
+}
+
 /* Clause heading: ordinal Valky bold italic + label Montserrat bold */
 .blk-head { margin: 0; padding: 13px 0 4px 0; text-align: left; }
 .blk-head .ord {

@@ -101,8 +101,69 @@ async function runOCR(file) {
   }
 }
 
-/* ─── Parse the OCR text with Claude to pull fields ────── */
+/* ─── Lectura del texto del DPI (en el teléfono, sin IA) ──
+   window.claude solo existe dentro de claude.ai: en docs.spacioam.com no
+   está, así que el nombre nunca se llenaba. Ahora el nombre y el CUI se
+   sacan del texto del OCR aquí mismo:
+   · Frente: la línea que sigue a «Nombre» y a «Apellido».
+   · Reverso: la zona de lectura mecánica (APELLIDOS<<NOMBRES).
+   Si window.claude existe (vista previa en claude.ai), se usa solo para
+   completar lo que falte. */
+const _LETRAS = /^[A-ZÁÉÍÓÚÑÜ][A-ZÁÉÍÓÚÑÜ .'-]{1,60}$/;
+function _limpiaNombre(t) {
+  return String(t || "").toUpperCase().replace(/[^A-ZÁÉÍÓÚÑÜ .'-]/g, " ").replace(/\s+/g, " ").trim();
+}
+function _cuiDe(text) {
+  const m = String(text || "").match(/(\d{4})\s*[- ]?\s*(\d{5})\s*[- ]?\s*(\d{4})/);
+  return m ? `${m[1]} ${m[2]} ${m[3]}` : "";
+}
+function _nombreZonaMecanica(lineas) {
+  for (const l of lineas) {
+    const z = l.replace(/\s+/g, "").toUpperCase();
+    // APELLIDO<APELLIDO<<NOMBRE<NOMBRE<<<< (sin dígitos; «K» suele ser un «<» mal leído al final)
+    const m = z.match(/^([A-ZÑ]+(?:<[A-ZÑ]+)*)<<([A-ZÑ]+(?:<[A-ZÑ]+)*)[<K]*$/);
+    if (m && !/^(ID|I<)[A-Z]{3}\d/.test(z)) {
+      const apellidos = m[1].replace(/</g, " ").trim();
+      const nombres = m[2].replace(/</g, " ").replace(/(\sK+)+$/, "").trim();
+      if (apellidos && nombres) return `${nombres} ${apellidos}`;
+    }
+  }
+  return "";
+}
+function _trasEtiqueta(lineas, re) {
+  for (let i = 0; i < lineas.length; i++) {
+    const l = lineas[i];
+    const m = l.match(re);
+    if (!m) continue;
+    // «NOMBRES: MARIA» en la misma línea
+    const resto = _limpiaNombre(l.slice(m.index + m[0].length).replace(/^[^:]*:/, ""));
+    if (l.includes(":") && _LETRAS.test(resto)) return resto;
+    // o en la línea siguiente
+    for (let j = i + 1; j < Math.min(i + 3, lineas.length); j++) {
+      const s = lineas[j].trim();
+      if (!s) continue;
+      if (/[a-z]/.test(s) || /\d/.test(s)) break; // otra etiqueta o una fecha: no es el nombre
+      const n = _limpiaNombre(s);
+      if (_LETRAS.test(n)) return n;
+      break;
+    }
+  }
+  return "";
+}
+function leerDPI(text) {
+  const lineas = String(text || "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  let nombre = _nombreZonaMecanica(lineas);
+  if (!nombre) {
+    const n = _trasEtiqueta(lineas, /^\s*nombres?\b/i);
+    const a = _trasEtiqueta(lineas, /^\s*apellidos?\b/i);
+    nombre = [n, a].filter(Boolean).join(" ");
+  }
+  return { nombre_completo: nombre, cui: _cuiDe(text) };
+}
+
+/* Solo en claude.ai (vista previa): completa lo que la lectura local no encontró. */
 async function extractWithClaude(ocrText) {
+  if (!(window.claude && typeof window.claude.complete === "function")) return { nombre_completo: "", cui: "" };
   const prompt = `Extrae los siguientes datos de este texto OCR de un Documento Personal de Identificación (DPI) de Guatemala. Devuelve SOLO un JSON válido sin explicaciones ni markdown:
 
 {
@@ -121,7 +182,6 @@ JSON:`;
 
   try {
     const result = await window.claude.complete(prompt);
-    // Try to extract JSON from result
     const match = result.match(/\{[\s\S]*\}/);
     if (!match) return { nombre_completo: "", cui: "" };
     return JSON.parse(match[0]);
@@ -129,14 +189,6 @@ JSON:`;
     console.warn("Claude extraction failed:", e);
     return { nombre_completo: "", cui: "" };
   }
-}
-
-/* ─── Fallback regex-only extraction ─────────────────── */
-function regexExtract(text) {
-  // DPI: 13 digits, often with spaces or hyphens
-  const dpiMatch = text.match(/(\d{4})\s*[- ]?\s*(\d{5})\s*[- ]?\s*(\d{4})/);
-  const cui = dpiMatch ? `${dpiMatch[1]} ${dpiMatch[2]} ${dpiMatch[3]}` : "";
-  return { nombre_completo: "", cui };
 }
 
 /* ─── Toast ───────────────────────────────────────────── */
@@ -306,6 +358,22 @@ function Generator({ onSent, base }) {
     ? !!(data.repNombre && data.repDPI && data.entidadNombre)
     : !!(data.duenoNombre && data.duenoDPI);
 
+  /* Ningún campo del contrato queda vacío sin avisar: se leen los datos que
+     la hoja muestra en color (⟦…⟧ → .blk-ph) y se avisan junto al botón. */
+  const [faltan, setFaltan] = useState([]);
+  useEffect(() => {
+    const el = document.getElementById("contract-doc");
+    if (!el) return;
+    const leer = () => {
+      const l = [...new Set([...el.querySelectorAll(".blk-ph")].map((x) => x.textContent.trim()).filter(Boolean))];
+      setFaltan((prev) => (prev.join("|") === l.join("|") ? prev : l));
+    };
+    leer();
+    const mo = new MutationObserver(leer);
+    mo.observe(el, { childList: true, subtree: true, characterData: true });
+    return () => mo.disconnect();
+  }, []);
+
   // Update default pago when tipo changes (only if user hasn't customized)
   useEffect(() => {
     setData((d) => {
@@ -408,12 +476,14 @@ function Generator({ onSent, base }) {
     try {
       const text = await runOCR(file);
       setOcrStatus("extract");
-      // Try Claude first
-      let extracted = await extractWithClaude(text);
-      // Fallback: regex
-      if (!extracted.cui) {
-        const rx = regexExtract(text);
-        extracted = { ...extracted, ...rx };
+      // Primero la lectura local (funciona siempre); la IA solo completa lo que falte.
+      let extracted = leerDPI(text);
+      if (!extracted.nombre_completo || !extracted.cui) {
+        const ia = await extractWithClaude(text);
+        extracted = {
+          nombre_completo: extracted.nombre_completo || ia.nombre_completo || "",
+          cui: extracted.cui || ia.cui || "",
+        };
       }
       setOcrStatus("");
       const nameField = isEmpleado ? "empNombre" : isCohosting ? (isJuridica ? "repNombre" : "duenoNombre") : "prestadorNombre";
@@ -423,8 +493,13 @@ function Generator({ onSent, base }) {
         [nameField]: extracted.nombre_completo || d[nameField],
         [dpiField]: extracted.cui || d[dpiField],
       }));
-      if (extracted.nombre_completo || extracted.cui) {
-        setToast("Datos extraídos. Verifica antes de generar.");
+      // Ningún campo queda vacío sin avisar: se dice cuál faltó.
+      if (extracted.nombre_completo && extracted.cui) {
+        setToast("Nombre y DPI leídos. Revísalos antes de generar.");
+      } else if (extracted.cui) {
+        setToast("Se leyó el DPI, pero no el nombre. Escríbelo a mano.");
+      } else if (extracted.nombre_completo) {
+        setToast("Se leyó el nombre, pero no el número de DPI. Escríbelo a mano.");
       } else {
         setToast("No se pudieron leer datos. Ingrésalos manualmente.");
       }
@@ -684,7 +759,7 @@ function Generator({ onSent, base }) {
             <div className="extract-status">
               <div className="spinner"></div>
               <span>
-                {ocrStatus === "ocr" ? "Leyendo imagen…" : "Extrayendo datos con IA…"}
+                {ocrStatus === "ocr" ? "Leyendo imagen…" : "Buscando nombre y DPI…"}
               </span>
             </div>
           )}
@@ -1164,6 +1239,13 @@ function Generator({ onSent, base }) {
         </details>}
 
         {/* ─── Enviar / generar ─── */}
+        {canGenerate && faltan.length > 0 && (
+          <div className="faltan-aviso" role="status">
+            Faltan {faltan.length === 1 ? "1 dato" : `${faltan.length} datos`} en el contrato:{" "}
+            {faltan.slice(0, 4).join(", ").toLowerCase()}{faltan.length > 4 ? " y más" : ""}.
+            {" "}Se ven en color en la hoja.
+          </div>
+        )}
         <button
           className="btn-primary"
           disabled={generating || generatingDocx || !canGenerate}
