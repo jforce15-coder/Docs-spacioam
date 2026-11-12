@@ -168,7 +168,11 @@ function doPost(e) {
   try { p = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (err) {}
     var __diag = accesosDiag_(p) || cupoDiag_(p); if (__diag) return __diag;   // fase 1b: resumen de accesos (robot)
     var __ses = sesionDe_(p); registrarAcceso_(p.action, __ses ? true : esRobot_(p) ? 'r' : false);
-    var __bloq = (!__ses && firmaExterna_(p)) ? null : exigirSesion_(p.action, !!__ses, p, ['ping']); if (__bloq) return __bloq;   // fase 1c: solo bloquea con SESION_EXIGIR = 1
+    var __bloq = (!__ses && firmaExterna_(p)) ? null : exigirSesion_(p.action, !!__ses, p, ['ping', 'enlace']); if (__bloq) return __bloq;   // fase 1c: solo bloquea con SESION_EXIGIR = 1
+  /* Enlaces cortos (#488 T4, enlaces.js): «enlace» es pública (la usa 404.html, sin TOKEN) y «acortar» pide sesión o la
+     llave del robot (el Hub). Las dos antes del TOKEN y del candado del script. */
+  if (p.action === 'enlace') return json_(abrirEnlace_(p.codigo));
+  if (p.action === 'acortar') return json_(acortarEnlace_(p, __ses));
   if (!auth_(p)) return json_({ ok: false, error: 'token' });
 
   var lock = LockService.getScriptLock();
@@ -531,12 +535,15 @@ function borrarDoc_(id) {
 
 function enviarCorreo_(p) {
   if (!p.to || !p.html) return { ok: false, error: 'faltan_datos' };
+  /* Enlaces cortos (#488 T4, enlaces.js): el de firmar (y cualquier otro de docs.spacioam.com o Drive) sale como
+     docs.spacioam.com/<código>, en el botón y en el texto. También los programados, que pasan por aquí. */
+  var html = acortarEnHtml_(p.html, 'correo'), texto = acortarEnTexto_(p.texto || '', 'correo');
 
   var alias = P_('FROM_EMAIL');
   var opciones = {
     name: P_('FROM_NAME'),
     replyTo: alias,
-    htmlBody: p.html
+    htmlBody: html
   };
   /* Solo se puede usar "from" si el alias está verificado en la cuenta. */
   if (GmailApp.getAliases().indexOf(alias) >= 0) opciones.from = alias;
@@ -547,7 +554,7 @@ function enviarCorreo_(p) {
     ];
   }
 
-  GmailApp.sendEmail(p.to, p.asunto || 'Spacio AM', p.texto || '', opciones);
+  GmailApp.sendEmail(p.to, p.asunto || 'Spacio AM', texto, opciones);
   return { ok: true, to: p.to, from: opciones.from || Session.getActiveUser().getEmail() };
 }
 
