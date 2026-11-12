@@ -319,6 +319,16 @@ function DocDetail({ doc, onClose, onChange, onSign, onToast, onDuplicar, lang, 
   const [firmaSpacio, setFirmaSpacio] = useS(false);
   const F = window.Docs;
   const [busy, setBusy] = useS("");
+  /* Enlace corto de firma (Hub #488 T4): se pide al abrir el documento, así «Copiar enlace» copia
+     docs.spacioam.com/<código> en el mismo toque (Safari no deja copiar después de esperar). Si no llega, el largo. */
+  const [corto, setCorto] = useS({ id: "", url: "" });
+  useE(() => {
+    if (!doc || !staff || !window.SpacioSync) return;
+    let vivo = true;
+    window.SpacioSync.post({ action: "acortar", url: signLink(doc) }, 15000)
+      .then((r) => { if (vivo && r && r.ok && r.corto) setCorto({ id: doc.id, url: r.corto }); });
+    return () => { vivo = false; };
+  }, [doc && doc.id, staff]);
   if (!doc) return null;
   const est = F.ESTADOS[doc.estado] || F.ESTADOS.borrador;
   const cerrado = doc.estado === "cancelado" || doc.estado === "anulado";
@@ -466,7 +476,7 @@ function DocDetail({ doc, onClose, onChange, onSign, onToast, onDuplicar, lang, 
             )}
             {staff && !cerrado && doc.estado !== "firmado" && (
               <button className="sa-btn ghost" onClick={() => {
-                navigator.clipboard.writeText(signLink(doc)).then(
+                navigator.clipboard.writeText(corto.id === doc.id && corto.url ? corto.url : signLink(doc)).then(
                   () => onToast("Enlace de firma copiado."), () => onToast("No se pudo copiar el enlace."));
               }}>Copiar enlace</button>
             )}

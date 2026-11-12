@@ -10,6 +10,11 @@ on:
     paths:
       - "apps-script/**"
       - ".clasp.json"
+      - ".github/enlaces.js"
+      - "404.html"
+      - "admin.jsx"
+      - "emails.js"
+      - "sheets-sync.js"
 
 jobs:
   revisar:
@@ -30,6 +35,10 @@ jobs:
             if node --check "$f"; then echo "✓ $f"; else echo "::error file=$f::Error de sintaxis"; fallo=1; fi
           done < <(find . -path ./.git -prune -o -path '*/archivo/*' -prune -o -path '*/apps-script/*.js' -print0)
           exit $fallo
+
+      - name: Enlaces cortos con docs.spacioam.com (dobles, sin internet)
+        # Hub #488 T4: el enlace para firmar salía largo (docs.spacioam.com/index.html?firmar=<id>).
+        run: node .github/enlaces.js apps-script
 
       - name: JSON y .clasp.json
         run: |
