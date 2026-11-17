@@ -30,6 +30,20 @@ var PROPS_DEFAULT = {
   EPI_SHEET_ID: '1-SfKC-evkK24qfOrrvIrcDs6ckGAmRzSLS_IYB8cYZg'
 };
 
+/* Paso 1 para sacar el TOKEN del código (repo público): si la propiedad TOKEN falta, se copia una sola vez desde
+   PROPS_DEFAULT. Corre al inicio de cada llamada (doPost y doGet), así la primera llamada después de publicar la
+   deja puesta (el Hub pregunta el cupo cada 15 min). En el paso 2 el valor sale del código y el TOKEN vive solo
+   en las Propiedades del script. Nunca escribe el valor en el registro. */
+function sembrarToken_() {
+  try {
+    var sp = PropertiesService.getScriptProperties();
+    if (!sp.getProperty('TOKEN') && PROPS_DEFAULT.TOKEN) {
+      sp.setProperty('TOKEN', PROPS_DEFAULT.TOKEN);
+      console.log('TOKEN copiado a las Propiedades del script');
+    }
+  } catch (e) { console.warn('sembrarToken_: ' + e); }
+}
+
 function P_(clave) {
   var v = PropertiesService.getScriptProperties().getProperty(clave);
   return v == null || v === '' ? PROPS_DEFAULT[clave] : v;
@@ -166,6 +180,7 @@ function buscarFila_(h, col, valor) {
 function doPost(e) {
   var p = {};
   try { p = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (err) {}
+  sembrarToken_();
     var __tras = trasladoEntregar_(p); if (__tras) return __tras;   // traslado a Workspace: solo a alma@ (apps-script/traslado.js)
     var __diag = accesosDiag_(p) || cupoDiag_(p); if (__diag) return __diag;   // fase 1b: resumen de accesos (robot)
     var __ses = sesionDe_(p); registrarAcceso_(p.action, __ses ? true : esRobot_(p) ? 'r' : false);
@@ -285,6 +300,7 @@ function doGet(e) {
   var q = (e && e.parameter) || {};
   var cb = q.callback;
   var salida;
+  sembrarToken_();
   try {
     if (!auth_(q))                        salida = { ok: false, error: 'token' };
     else if (q.action === 'getDoc')       salida = { ok: true, doc: getDoc_(q.id) };
