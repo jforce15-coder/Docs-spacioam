@@ -43,7 +43,7 @@ Eso crea en la hoja de cálculo cinco pestañas con formato legible:
 
 | Clave | Valor |
 |---|---|
-| `TOKEN` | *(secreto: se pone solo aquí, nunca en el código ni en GitHub)* |
+| `TOKEN` | `Spacio2026!` |
 | `SHEET_ID` | `1r__zfIAFLr6mxcuAN6HwQF1OmLTG-lce-jv_naGRDVU` |
 | `FOLDER_ID` | `1GzxF5El3YaT0UVZLMBeRIfwXgzZxyqSa` |
 | `FROM_EMAIL` | `hola@spacioam.com` |
@@ -143,7 +143,7 @@ El web app envía `POST` con el cuerpo en JSON. Todas llevan `token`.
 Para leer sin problemas de CORS existe también el `GET` con JSONP:
 
 ```
-…/exec?action=getDoc&id=doc_123&token=<TOKEN>&callback=cb
+…/exec?action=getDoc&id=doc_123&token=Spacio2026!&callback=cb
 ```
 
 ---

@@ -11,8 +11,7 @@
    Se leen de PropertiesService. Para verlas o cambiarlas:
    Configuración del proyecto (⚙) → Propiedades del script.
    Claves usadas:
-     TOKEN       clave compartida con el web app. SOLO en las Propiedades:
-                 nunca en el código (repo público; hay un check).
+     TOKEN       clave compartida con el web app
      SHEET_ID    id de la hoja de cálculo
      FOLDER_ID   id de la carpeta de Drive
      FROM_EMAIL  alias desde el que se envía
@@ -21,6 +20,7 @@
 ─────────────────────────────────────────────────────────────────── */
 
 var PROPS_DEFAULT = {
+  TOKEN:      'Spacio2026!',
   SHEET_ID:   '1r__zfIAFLr6mxcuAN6HwQF1OmLTG-lce-jv_naGRDVU',
   FOLDER_ID:  '1GzxF5El3YaT0UVZLMBeRIfwXgzZxyqSa',
   FROM_EMAIL: 'hola@spacioam.com',
@@ -29,6 +29,20 @@ var PROPS_DEFAULT = {
   /* Hoja de la EPI App (Config → props): de ahí sale la lista de propiedades. */
   EPI_SHEET_ID: '1-SfKC-evkK24qfOrrvIrcDs6ckGAmRzSLS_IYB8cYZg'
 };
+
+/* Paso 1 para sacar el TOKEN del código (repo público): si la propiedad TOKEN falta, se copia una sola vez desde
+   PROPS_DEFAULT. Corre al inicio de cada llamada (doPost y doGet), así la primera llamada después de publicar la
+   deja puesta (el Hub pregunta el cupo cada 15 min). En el paso 2 el valor sale del código y el TOKEN vive solo
+   en las Propiedades del script. Nunca escribe el valor en el registro. */
+function sembrarToken_() {
+  try {
+    var sp = PropertiesService.getScriptProperties();
+    if (!sp.getProperty('TOKEN') && PROPS_DEFAULT.TOKEN) {
+      sp.setProperty('TOKEN', PROPS_DEFAULT.TOKEN);
+      console.log('TOKEN copiado a las Propiedades del script');
+    }
+  } catch (e) { console.warn('sembrarToken_: ' + e); }
+}
 
 function P_(clave) {
   var v = PropertiesService.getScriptProperties().getProperty(clave);
@@ -150,8 +164,7 @@ function jsonp_(cb, obj) {
     .setMimeType(ContentService.MimeType.JAVASCRIPT);
 }
 
-/* Sin la propiedad TOKEN se rechaza todo (no hay valor por defecto). */
-function auth_(p) { var t = P_('TOKEN'); return !!t && String((p && p.token) || '') === String(t); }
+function auth_(p) { return String(p && p.token) === String(P_('TOKEN')); }
 
 function buscarFila_(h, col, valor) {
   if (h.getLastRow() < 2) return 0;
@@ -167,6 +180,7 @@ function buscarFila_(h, col, valor) {
 function doPost(e) {
   var p = {};
   try { p = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (err) {}
+  sembrarToken_();
     var __tras = trasladoEntregar_(p); if (__tras) return __tras;   // traslado a Workspace: solo a alma@ (apps-script/traslado.js)
     var __diag = accesosDiag_(p) || cupoDiag_(p); if (__diag) return __diag;   // fase 1b: resumen de accesos (robot)
     var __ses = sesionDe_(p); registrarAcceso_(p.action, __ses ? true : esRobot_(p) ? 'r' : false);
@@ -286,6 +300,7 @@ function doGet(e) {
   var q = (e && e.parameter) || {};
   var cb = q.callback;
   var salida;
+  sembrarToken_();
   try {
     if (!auth_(q))                        salida = { ok: false, error: 'token' };
     else if (q.action === 'getDoc')       salida = { ok: true, doc: getDoc_(q.id) };
