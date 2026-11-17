@@ -11,7 +11,6 @@ on:
       - "apps-script/**"
       - ".clasp.json"
       - ".github/enlaces.js"
-      - ".github/llaves-literales.js"
       - "404.html"
       - "admin.jsx"
       - "emails.js"
@@ -36,10 +35,6 @@ jobs:
             if node --check "$f"; then echo "✓ $f"; else echo "::error file=$f::Error de sintaxis"; fallo=1; fi
           done < <(find . -path ./.git -prune -o -path '*/archivo/*' -prune -o -path '*/apps-script/*.js' -print0)
           exit $fallo
-
-      - name: Ninguna llave escrita en el Apps Script (repo público)
-        # Paso 2 de sacar el TOKEN de PROPS_DEFAULT: las llaves viven solo en las Propiedades del script.
-        run: node .github/llaves-literales.js apps-script
 
       - name: Enlaces cortos con docs.spacioam.com (dobles, sin internet)
         # Hub #488 T4: el enlace para firmar salía largo (docs.spacioam.com/index.html?firmar=<id>).

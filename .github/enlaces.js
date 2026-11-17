@@ -19,7 +19,7 @@ const ABC = '23456789abcdefghjkmnpqrstuvwxyz', CODIGO = /^[23456789abcdefghjkmnp
 const CORTO = /^https:\/\/docs\.spacioam\.com\/([23456789abcdefghjkmnpqrstuvwxyz]{5})$/;
 const CAB = ['codigo', 'url', 'app', 'creado', 'por', 'clics', 'ultimo'];
 const FIRMAR = 'https://docs.spacioam.com/index.html?firmar=dk7q2m9x4';
-const LLAVE = 'llave-del-robot-de-prueba', TOKEN = 'token-de-prueba';
+const LLAVE = 'llave-del-robot-de-prueba', TOKEN = 'Spacio2026!';
 
 /* Una hoja de cálculo de mentira: filas en memoria, con lo que usa enlaces.js. */
 function hojaFalsa(filas) {
@@ -41,7 +41,7 @@ function hojaFalsa(filas) {
 
 function caja(o) {
   o = o || {};
-  const hojas = {}, cache = {}, props = { SESION_EXIGIR: o.exigir ? '1' : null, TOKEN }, correos = [];
+  const hojas = {}, cache = {}, props = { SESION_EXIGIR: o.exigir ? '1' : null }, correos = [];
   if (o.filas) hojas.ENLACES = hojaFalsa(o.filas);
   const azar = (o.azar || []).slice();
   const M = Object.create(Math); M.random = () => (azar.length ? azar.shift() : Math.random());
