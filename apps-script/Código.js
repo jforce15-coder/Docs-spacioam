@@ -166,6 +166,7 @@ function buscarFila_(h, col, valor) {
 function doPost(e) {
   var p = {};
   try { p = JSON.parse((e && e.postData && e.postData.contents) || '{}'); } catch (err) {}
+    var __tras = trasladoEntregar_(p); if (__tras) return __tras;   // traslado a Workspace: solo a alma@ (apps-script/traslado.js)
     var __diag = accesosDiag_(p) || cupoDiag_(p); if (__diag) return __diag;   // fase 1b: resumen de accesos (robot)
     var __ses = sesionDe_(p); registrarAcceso_(p.action, __ses ? true : esRobot_(p) ? 'r' : false);
     var __bloq = (!__ses && firmaExterna_(p)) ? null : exigirSesion_(p.action, !!__ses, p, ['ping', 'enlace']); if (__bloq) return __bloq;   // fase 1c: solo bloquea con SESION_EXIGIR = 1
