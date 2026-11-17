@@ -62,7 +62,8 @@ function caja(o) {
     UrlFetchApp: { fetch() { throw new Error('la prueba no sale a internet'); } }
   };
   vm.createContext(ctx);
-  ['Código.js', 'sesion.js', 'cupo.js', 'enlaces.js'].forEach(f => vm.runInContext(fs.readFileSync(path.join(DIR, f), 'utf8'), ctx, { filename: f }));
+  fs.readdirSync(DIR).filter(f => f.endsWith('.js')).sort().forEach(   // como Apps Script: todos los archivos juntos
+    f => vm.runInContext(fs.readFileSync(path.join(DIR, f), 'utf8'), ctx, { filename: f }));
   // La llave del robot de esta prueba (la de verdad solo vive en las Propiedades del Hub) y una sesión de mentira.
   vm.runInContext("SES_ROBOT_HASH_ = '" + crypto.createHash('sha256').update(LLAVE).digest('hex') + "';", ctx);
   ctx.sesionDe_ = b => (b && b.session === 'firmada' ? { email: 'equipo@ejemplo.com', nombre: 'Equipo' } : null);
