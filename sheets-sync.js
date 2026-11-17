@@ -18,7 +18,10 @@
   var SHEET_ID = "1r__zfIAFLr6mxcuAN6HwQF1OmLTG-lce-jv_naGRDVU";
   var FOLDER_ID = "1GzxF5El3YaT0UVZLMBeRIfwXgzZxyqSa";
   var EP_KEY = "spacio_sync_endpoint_v1";
-  var EP_DEFAULT = "https://script.google.com/macros/s/AKfycbz2_KDtQ5Wm8LRiyEwCXxsHx_DtE4pe2b_aJlLFrN0zu7UvLrnh2PM-6VzbEf00oekW_Q/exec";
+  /* Apps Script de Docs en alma@spacioam.com (traslado a Workspace, 17-nov-2026). EP_VIEJO: el de la cuenta Gmail, queda
+     de respaldo unos días; si un navegador lo guardó a mano, se ignora. */
+  var EP_DEFAULT = "https://script.google.com/macros/s/AKfycbxcz_zjz39kRCfwQLLIk7HugqwqNGe2VKpf8okRemCrDvoVEgVCezeou9w5pfNjuXlE/exec";
+  var EP_VIEJO = "https://script.google.com/macros/s/AKfycbz2_KDtQ5Wm8LRiyEwCXxsHx_DtE4pe2b_aJlLFrN0zu7UvLrnh2PM-6VzbEf00oekW_Q/exec";
   var TK_KEY = "spacio_sync_token_v1";
   function token() {
     var ls = "";
@@ -33,6 +36,7 @@
   function endpoint() {
     var ls = "";
     try { ls = localStorage.getItem(EP_KEY) || ""; } catch (e) {}
+    if (ls === EP_VIEJO) ls = "";
     return ls || window.SPACIO_DOCS_ENDPOINT || EP_DEFAULT;
   }
   function setEndpoint(url) { try { localStorage.setItem(EP_KEY, url || ""); } catch (e) {} }
