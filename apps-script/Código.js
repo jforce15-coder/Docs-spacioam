@@ -705,7 +705,13 @@ function cancelarProgramado_(docId) {
 }
 
 /** Lo corre el activador cada 5 minutos. */
+/* Traslado a Workspace (Hub-Spacioam docs/specs/traslado-workspace.md): mientras el proyecto viejo (cuenta Gmail) siga vivo
+   como respaldo, los dos tienen el activador de los programados y leen la misma hoja. Los envía solo el de alma@: el viejo
+   no manda nada (así nadie recibe un correo dos veces). Para volver atrás, se quita esta línea. */
+var DOCS_PROYECTO_VIEJO_ = '1jfOCJpPLwxCR1NZKC3om3LZeenFZO8MONBPFkiPH8KDK-fxykla8y-4w';
+
 function enviarProgramados() {
+  if (ScriptApp.getScriptId() === DOCS_PROYECTO_VIEJO_) return;   // el viejo es solo respaldo: no envía
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(10000)) return;
   try {
