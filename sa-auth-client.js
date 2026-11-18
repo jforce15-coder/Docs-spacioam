@@ -3,7 +3,7 @@
    Se carga DESPUÉS de React y ANTES de admin.jsx.                */
 (function (global) {
   var CFG = {
-    url: 'https://script.google.com/macros/s/AKfycbxfdwLzsA8bwgOxUTOtf3Hw1ptIm8Cy34tspmFndu3WtRrkVSSnGyBP7obRrm73mcUd/exec',
+    url: 'https://script.google.com/macros/s/AKfycbyX_ON7wF0Logs2EfL-K13MJXPDAGADWizVxJt_DP2ZAvSscS1qirYeZYOP5n-zfhnO/exec',
     token: 'SpacioAM2026!'
   };
 
