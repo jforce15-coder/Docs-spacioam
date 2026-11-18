@@ -448,7 +448,7 @@ function SendModal({ open, tipo, data, custom, edits, sugerido, onClose, onSent 
    Antes este modal solo mostraba «enviado» y el correo que salía (desde otra versión) llevaba un enlace roto
    (?firmar= sin documento): lo que llenaba el propietario no se guardaba en ningún lado. Ahora el enlace es el
    formulario de Grow del proyecto elegido, que guarda los datos y el DPI dentro del proyecto. */
-const GROW_API = "https://script.google.com/macros/s/AKfycbxPYwdz0Q8za7_wZzX37QeqODoqwxOeoXZpeEWp94HKtHMqru12VPD4xt0cOtWHZA1LDQ/exec";
+const GROW_API = "https://script.google.com/macros/s/AKfycbxECFedgEkQF7wh9k__sLYza_jDO6yCljHVFBv984zZT2C73awX1ChqWXXdkiEfkA/exec";
 function growPost(body) {
   return fetch(GROW_API, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(body) })
     .then((r) => r.json()).then((j) => { if (!j || !j.ok) throw new Error((j && j.error) || "grow"); return j.data; });
