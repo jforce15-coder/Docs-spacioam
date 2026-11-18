@@ -782,3 +782,5 @@ function propiedades_() {
   try { cache.put('props_epi', JSON.stringify(out), 21600); } catch (e) {}
   return { ok: true, propiedades: out };
 }
+
+// Unir = publicar: lo que se une a main en apps-script/ llega solo a alma@ (Traslado a Workspace, 18-nov-2026).
